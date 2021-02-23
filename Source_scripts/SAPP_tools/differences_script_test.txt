@@ -1,0 +1,5851 @@
+--- 
+
++++ 
+
+@@ -1,2262 +1,316 @@
+
+-#!/usr/bin/env python3
+
+-# -*- coding: utf-8 -*-
+
+-"""
+
+-Created on Thu Oct  8 11:26:13 2020
+
+-
+
+-@author: gent
+
+-"""
+
+-
+
+-from __future__ import print_function, division
+
+-
+
+-import sys
+
+-
+
+-import matplotlib.pyplot as plt
+
+-
+
+-import h5py
+
+-
+
+ import numpy as np
+
+ from scipy.optimize import curve_fit
+
+-import multiprocessing as mp
+
+-import os
+
+-from scipy import ndimage
+
+-# import Payne.astro_constants_cgs as astroc
+
+-import astro_constants_cgs as astroc
+
+-from astropy.io import fits as pyfits
+
+-import scipy.interpolate as sci
+
+-# from scipy import stats
+
+-# import SAPP_spectroscopy.Payne.astro_constants_cgs as astroc
+
+-
+
+-# use LaTex font
+
+-from matplotlib.pyplot import rc
+
+-
+
+-# from SAPP_spectroscopy.Payne.continuum_norm_spectra import continuum_normalise_spectra
+
+-from continuum_norm_spectra import continuum_normalise_spectra
+
+-
+
+-# font = {'family': 'serif',
+
+-#        'serif': ['Computer Modern'],
+
+-#        'size': 22}
+
+-
+
+-# rc('font', **font)
+
+-rc('text', usetex=False)
+
+-
+
+-np.set_printoptions(suppress=True,formatter={'float': '{: 0.5f}'.format})
+
+-
+
+-def correlation_from_covariance(covariance):
+
+-    
+
+-    v = np.sqrt(np.diag(covariance))
+
+-    outer_v = np.outer(v, v)
+
+-    correlation = covariance / outer_v
+
+-    correlation[covariance == 0] = 0
+
+-    
+
+-    return correlation
+
++from multiprocessing import Pool
+
++import h5py
+
++import matplotlib.pyplot as plt
+
++#from PyAstronomy import pyasl
+
++
+
++np.set_printoptions(suppress=True,formatter={'float': '{: 0.2f}'.format})
+
+ 
+
+ # define sigmoid function
+
+ def sigmoid(z):
+
+-    return 1.0/(1.0+np.exp(-z))
+
++	return 1.0/(1.0+np.exp(-z))
+
+ 
+
+ def lrlu(z):
+
+-    z[z<0]*=1e-2
+
+-    return z
+
++	z[z<0]*=1e-2
+
++	return z
+
+ 
+
+ def relu(z):
+
+-    z[z<0.0]=0.0
+
+-    return z
+
+-
+
+-def mad(arr):
+
+-    """Calculate median absolute deviation"""
+
+-    arr = np.array(arr)
+
+-    med = np.median(arr)
+
+-    return np.median(abs(arr-med))
+
+-
+
+-
+
+-def sigclip(data, sig):
+
+-    """Sigma clip the data"""
+
+-    n = len(data)
+
+-
+
+-    start = 0
+
+-    step = 500
+
+-    end = start + step
+
+-
+
+-    dataout = np.zeros(n)
+
+-    while end < n:
+
+-        data2 = data[start:end]
+
+-        m = np.median(data2)
+
+-        s = mad(data2)
+
+-
+
+-        idx = data[start:end] > m+sig*s # how does this line work?
+
+-        dataout[start:end][~idx] = data[start:end][~idx] # what does ~ operator do?
+
+-        for i in range(start, end):
+
+-            if data[i] > m+sig*s:
+
+-                dataout[i] = dataout[i-1]
+
+-        start = end
+
+-        end = start+step
+
+-
+
+-    data2 = data[start:n]
+
+-    m = np.median(data2)
+
+-    s = mad(data2)
+
+-    for i in range(start,n):
+
+-        if data[i] > m+sig*s:
+
+-            dataout[i] = data[i-1]
+
+-
+
+-    idx = data[start:n] > m+sig*s
+
+-    dataout[start:n][~idx] = data[start:n][~idx]
+
+-    return dataout
+
+-
+
++	z[z<0.0]=0.0
+
++	return z
+
++
+
++
+
++
+
++#define array with polynomials for normalisation
+
++#order of Chebyshev polynomials
+
++cheb=10
+
++gks=[]
+
++for i in range(cheb):
+
++	gks.append(np.polynomial.Chebyshev.basis(i,domain=[0,5540])(np.arange(5541)))
+
++gks=np.array(gks)
+
++gks=gks.T
+
+ 
+
+ #function that restore payne model spectrum apply doppler shift and normalisation
+
+-def restore1(wvl_arr, *labels):
+
+-    #part of spectrum    
+
+-    
+
+-    wvl_min_bool = wvl_arr[0]
+
+-    wvl_max_bool = wvl_arr[1]
+
+-    wvl_obs = wvl_arr[2:] # this needs to be used to cut pred flux, it is already been interpolated and shifted to rest frame
+
+-        
+
+-    #1st layer
+
+-    if cheb == 0:
+
+-        first=relu(np.dot(w_array_0,labels[1:])+ b_array_0)        
+
+-    elif cheb >= 1:
+
+-        first=relu(np.dot(w_array_0,labels[1:-cheb])+ b_array_0)
+
+-
+
+-    #2nd layer
+
+-    snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
+
+-    
+
+-    #3nd layer
+
+-    trd=(np.dot(w_array_2,snd) + b_array_2)
+
+-    predict_flux = trd
+
+-
+
+-    if cheb == 0:
+
+-        
+
+-        params_norm = np.array(labels[1:])
+
+-        
+
+-        params_un_norm = (params_norm + 0.5)*(np.array(x_max)-np.array(x_min)) + np.array(x_min)
+
+-        
+
+-        # print(params_un_norm)
+
+-        
+
+-        # with open("../Output_data/Stars_Lhood_spectroscopy/HD49933/HD49933_curvefit_collect_diff_start.txt",'a') as the_file:
+
+-            
+
+-            # the_file.write(np.array(params_un_norm,dtype=str) +'\n')
+
+-            # the_file.write(str(params_un_norm).replace("[","").replace("]","\n"))
+
+-        
+
+-        
+
+-    else:
+
+-        
+
+-        params_norm = np.array(labels[1:-cheb])
+
+-        
+
+-        cfc=np.array(labels[-cheb:])
+
+-        cfc[0]+=1.
+
+-        #multiply with normalisation polynomials
+
+-        cnt=np.dot(gks,cfc)
+
+-        predict_flux*=cnt
+
+-            
+
+-#    predict_flux = sigclip(predict_flux, sig=3.0) # sigma clipping model (for now)
+
+-
+
+-    w0_temp = w0
+
+-
+
+-    if len(wvl_obs) > 0: # then we can do stuff with it
+
+-    
+
+-        if int(wvl_min_bool) == 1: # cut model min to obs min
+
+-            
+
+-            predict_flux = predict_flux[w0_temp>=min(wvl_obs)]
+
+-            w0_temp = w0_temp[w0_temp>=min(wvl_obs)]
+
+-            
+
+-        if int(wvl_max_bool) == 1: # cut model max to obs max
+
+-        
+
+-            predict_flux = predict_flux[w0_temp<=max(wvl_obs)]
+
+-            w0_temp = w0_temp[w0_temp<=max(wvl_obs)]
+
+-                                        
+
+-    return predict_flux
+
+-
+
++def restore1(arr, *labels):
+
++	#part of spectrum
+
++# 	set=arr[0]
+
++	#initial radial velocity
+
++	rv=arr
+
++# 	rv=arr[1]
+
++	rv+=6*labels[0]
+
++	#dopler shift to model wavelength
+
++	www=w0*(1+rv/299792.458)
+
++	#1t layer
+
++	first=relu(np.dot(w_array_0,labels[1:-cheb])+ b_array_0)
+
++	#2d layer
+
++	snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
+
++	#3d layer
+
++	trd=(np.dot(w_array_2,snd) + b_array_2)
+
++	predict_flux = trd
+
++	#interpolate to obs scale
+
++	flux=np.interp(wvl,www,predict_flux)
+
++	#coefficients for polynomials
+
++	cfc=np.array(labels[-cheb:])
+
++	cfc[0]+=1.
+
++	#multiply with normalisation polynomials
+
++	cnt=np.dot(gks,cfc)
+
++	flux*=cnt
+
++	
+
++	return flux
+
+ #function that restore payne model spectrum apply doppler shift and normalisation
+
+-def restore(wvl_arr, *labels):
+
+-    #part of spectrum
+
+-
+
+-    wvl_min_bool = wvl_arr[0]
+
+-    wvl_max_bool = wvl_arr[1]
+
+-    wvl_obs = wvl_arr[2:] # this needs to be used to cut pred flux, it is already been interpolated and shifted to rest frame
+
+-
+
+-    #1t layer
+
+-    # first=relu(np.dot(w_array_0,labels[1:])+ b_array_0) # there wasn't a 1 here before
+
+-    first=relu(np.dot(w_array_0,labels[:])+ b_array_0) # there wasn't a 1 here before
+
+-    #2d layer
+
+-    snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
+
+-    #3d layer
+
+-    trd=(np.dot(w_array_2,snd) + b_array_2)
+
+-    predict_flux = trd
+
+-    
+
+-    w0_temp = w0
+
+-
+
+-    if len(wvl_obs) > 0: # then we can do stuff with it
+
+-    
+
+-        if int(wvl_min_bool) == 1: # cut model min to obs min
+
+-            
+
+-            predict_flux = predict_flux[w0_temp>=min(wvl_obs)]
+
+-            w0_temp = w0_temp[w0_temp>=min(wvl_obs)]
+
+-            
+
+-        if int(wvl_max_bool) == 1: # cut model max to obs max
+
+-        
+
+-            predict_flux = predict_flux[w0_temp<=max(wvl_obs)]
+
+-            w0_temp = w0_temp[w0_temp<=max(wvl_obs)]
+
+-                                        
+
+-    return predict_flux
+
+-
+
+-def load_TS_spec(path):
+
+-    """loads spectra from TS"""
+
+-    
+
+-    spec = np.loadtxt(path)
+
+-    wavelength = spec[:,0] # angstrom
+
+-    flux = spec[:,1] # normalised
+
+-    
+
+-    return wavelength,flux
+
+-
+
+-def convolve_python(wavelength_input,flux_input,Resolution):
+
+-
+
+-    smpl=(wavelength_input[1]-wavelength_input[0]) # wavelength range must have regular spacing
+
+-    fwhm=np.mean(wavelength_input)/Resolution # Resolution is the intended resolution
+
+-    flux_convolve=ndimage.filters.gaussian_filter1d(flux_input,fwhm*0.4246609/smpl)
+
+-    
+
+-    return wavelength_input,flux_convolve
+
+-
+
+-def instrument_conv_res(wave, flux, Resolution):
+
+-        
+
+-    fwhm = (np.mean(wave)/Resolution) * 1000 # to get into correct units 
+
+-    
+
+-    #create a file to feed to ./faltbon of spectrum that needs convolving
+
+-    
+
+-    f = open('original_instrument.txt', 'w')
+
+-    spud = [9.999 for i in range(len(wave))] #faltbon needs three columns of data, but only cares about the first two
+
+-    for j in range(len(wave)):
+
+-        f.write("{:f}  {:f}  {:f}\n".format(wave[j], flux[j], spud[j]))
+
+-    f.close()
+
+-    os.system("{ echo original_instrument.txt; echo convolve_instrument.txt; echo %f; echo 2; } | ./faltbon" % fwhm)
+
+-    
+
+-    wave_conv, flux_conv, spud = np.loadtxt("convolve_instrument.txt", unpack='True') #read in our new convolved spectrum
+
+-    return wave_conv, flux_conv
+
+-
+
+-
+
+-def RV_correction_vel_to_wvl_non_rel(waveobs,xRV): 
+
+-    
+
+-    """ 
+
+-    
+
+-    This applies RV correction assuming it is known e.g. gravitational redshift
+
+-    for the Sun is 0.6 km/s
+
+-    
+
+-    N.B. xRV is RV correction in km/s 
+
+-    
+
+-    
+
+-    """
+
+-    
+
+-    waveobs_corr = waveobs.copy()
+
+-    
+
+-    CCC  = 299792.458 # SPOL km/s
+
+-    
+
+-    for pixel in range(len(waveobs_corr)):
+
+-    
+
+-        waveobs_corr[pixel] = waveobs_corr[pixel]/((xRV)/CCC + 1.)
+
+-        
+
+-    return waveobs_corr # teying to make an array or tuple here
+
+-
+
+-def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,savefig_bool,Resolution):
+
+-    
+
+-    """
+
+-    Calculate RV shift using CC method
+
+-    
+
+-    Based on PyAstronomy rv_correction documentation
+
+-    
+
+-    Method does not use FFT method
+
+-    
+
+-    returns: rv shift, arrays of rv, CC function
+
+-    """
+
+-    
+
+-    wvl = spec_obs[0]
+
+-    obs = spec_obs[1]
+
+-    usert = spec_obs[2]
+
+-    
+
+-    spec_template_wvl = spec_template[0] # template needs to have much larger wavelength coverage than obs!!!
+
+-    spec_template_flux = spec_template[1]
+
+-        
+
+-    # spec_template_wvl,spec_template_flux = instrument_conv_res(spec_template_wvl, spec_template_flux, 18000)
+
+-    spec_template_wvl,spec_template_flux = convolve_python(spec_template_wvl, spec_template_flux, 18000)
+
+-            
+
+-    drvs = np.arange(rv_min,rv_max+drv,drv)
+
+-    
+
+-    cc = np.zeros(len(drvs))
+
+-    
+
+-    # Speed of light in km/s
+
+-    c = 299792.458
+
+-            
+
+-    for i,rv in enumerate(drvs):
+
+-        
+
+-        fi = sci.interp1d(spec_template_wvl*(1.0 + rv/c), spec_template_flux)
+
+-        
+
+-        # model is interpolated onto observed spectrum... this is strange
+
+-        
+
+-        cc[i] = np.sum(obs * fi(wvl)) # is this the literal definition of CC, where's the fourier transform?
+
+-        
+
+-    
+
+-    # Find the index of maximum cross-correlation function
+
+-    max_ind = np.argmax(cc)
+
+-                        
+
+-    return drvs[max_ind],drvs,cc
+
+-
+
+-def read_fits_GES_GIR_spectra(path):
+
+-        
+
+-    hdulist = pyfits.open(path)
+
+-        
+
+-    flux_norm = hdulist[2].data # this is the normalised spectrum
+
+-    
+
+-    flux_norm_inverse_variance = hdulist[3].data
+
+-    flux_inverse_variance = hdulist[1].data
+
+-    
+
+-    wav_zero_point = hdulist[0].header['CRVAL1'] # wavelength zero point
+
+-    
+
+-    wav_increment = hdulist[0].header['CD1_1'] # wavelength increment
+
+-    
+
+-    wavelength = wavelength = np.arange(0,len(flux_norm))*wav_increment + wav_zero_point
+
+-    
+
+-    rv_shift = hdulist[5].data['VEL'][0] # 5 is the velocity column, documentation says to use this
+
+-    
+
+-    rv_shift_err = hdulist[5].data['EVEL'][0] # km/s
+
+-    
+
+-    SNR_med = hdulist[5].data['S_N'][0] 
+
+-    
+
+-    error_med = flux_norm/SNR_med # can't seem to find error from fits
+
+-    
+
+-    return wavelength,flux_norm,error_med,rv_shift,rv_shift_err,SNR_med,np.average(1/flux_norm_inverse_variance**0.5),np.average(1/flux_inverse_variance**0.5)
+
+-
+
+-
+
+-### error mask for solar doesn't necessarily have same wvl as other spectra
+
+-### for some reason...
+
+-### shouldn't they all have the same wvl?
+
+-### originally they do
+
+-### however they are rv corrected by different amounts
+
+-### you need to account for this
+
+-### error mask in v1 is created from residual between obs and fit both in mod scale and rest frame
+
+-
+
+-### you need to rv correct the spectra other wise fit will not match and thus e-mask will only
+
+-### take into account rv difference
+
+-### why did the stars not have a problem before hand?
+
+-### because they were interpolated onto the same scale as the model but not cut correctly
+
+-
+
+-### need to interpolate/cut error mask to the observations, if it deosn't exist in a region then place 0
+
+-### i.e. no weight on that pixel
+
+-
+
+-def read_txt_spectra(path,rv_calc):
+
+-    
+
+-    """
+
+-    Reads simple text file where first column is wavelength
+
+-    and second column is flux.
+
+-    
+
+-    There is no RV information so its calculated here
+
+-    
+
+-    The SNR information is in the name of the spectra
+
+-    """
+
+-    
+
+-    spectra = np.loadtxt(path)
+
+-    
+
+-    wavelength = spectra[:,0]
+
+-    flux = spectra[:,1]
+
+-    
+
+-    SNR_med = int(float(path.split("snr")[1].split("_")[0]))
+
+-    
+
+-    error_med = flux/SNR_med 
+
+-    
+
+-    # print("No RV correction found, calculating...")
+
+-    
+
+-    if rv_calc == True:
+
+-    
+
+-        print("calculating rv shift")    
+
+-    
+
+-        rv_min = -100
+
+-        rv_max = 100
+
+-        drv = 0.05
+
+-        
+
+-        spec_resolution = 20000
+
+-        
+
+-        spec_template_wvl = wvl_solar_model
+
+-        spec_template_flux = flux_solar_model
+
+-                
+
+-        rv_shift,rv_array,cross_corr = rv_cross_corelation_no_fft([wavelength,flux,error_med],\
+
+-                                                                      [spec_template_wvl,spec_template_flux],\
+
+-                                                                      rv_min,\
+
+-                                                                      rv_max,\
+
+-                                                                      drv,\
+
+-                                                                      title="",\
+
+-                                                                      savefig_bool=False,\
+
+-                                                                      Resolution=spec_resolution)
+
+-    
+
+-        print("Calc RV ",rv_shift,"+-",drv,"Km/s")
+
+-    
+
+-        rv_shift_err = drv
+
+-        
+
+-    else:
+
+-        
+
+-        rv_shift = np.nan
+
+-        rv_shift_err = np.nan
+
+-        
+
+-    return wavelength,flux,error_med,rv_shift,rv_shift_err,SNR_med
+
+-    
+
+-def read_fits_spectra(path):
+
+-        
+
+-    hdulist = pyfits.open(path)
+
+-        
+
+-    scidata = hdulist[1].data
+
+-            
+
+-    wavelength = scidata[0][0]
+
+-    flux = scidata[0][1]
+
+-    error = scidata[0][2]
+
+-    
+
+-    ### need to do same thing with SNR and RV shift here!!!
+
+-    
+
+-    ### maybe the fits file has RV info within it...
+
+-    
+
+-    SNR_med = int(float(path.split("snr")[1].split("_")[0]))
+
+-    
+
+-    error_med = flux/SNR_med 
+
+-    
+
+-    # print("No RV correction found, calculating...")
+
+-    
+
+-    ### rv correction must be done post continuum normalisation
+
+-    
+
+-    rv_shift = np.nan
+
+-    rv_shift_err = np.nan
+
+-    
+
+-    return wavelength,flux,error_med,rv_shift,rv_shift_err,SNR_med    
+
+-
+
+-def read_hr10_gir_idr6_h5(ind_spec,snr,rvs,wvl_hr10,hdfile):
+
+-    
+
+-    with h5py.File(hdfile, "r") as hdf5:
+
+-        #flux
+
+-        obs = hdf5["spectrum"][ind_spec]
+
+-        #median value
+
+-        med=np.median(obs)
+
+-        obs/=med
+
+-        #flux error
+
+-        usert = hdf5["error_spectrum"][ind_spec]/med
+
+-        
+
+-    #problematic region with reduction problem in hr10
+
+-    usert[4858:4868]=1000
+
+-    rv_shift=rvs[ind_spec_arr]
+
+-    
+
+-    rv_shift_err = np.nan
+
+-            
+
+-    snr_star = snr[ind_spec_arr]
+
+-
+
+-    wvl = wvl_hr10
+
+-                    
+
+-    return wvl,obs,usert,rv_shift,rv_shift_err,snr_star
+
+-
+
++def restore(arr, *labels):
+
++	#part of spectrum
+
++	set=arr
+
++	#1t layer
+
++	first=relu(np.dot(w_array_0,labels[:])+ b_array_0)
+
++	#2d layer
+
++	snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
+
++	#3d layer
+
++	trd=(np.dot(w_array_2,snd) + b_array_2)
+
++	predict_flux = trd
+
++	
+
++	return predict_flux
+
++	
+
++	
+
++#restore for only one free label, other fixed, in window 
+
++def restone(arr, *labels):
+
++	set=arr[0]#window
+
++	lab=arr[1]#labels from full spectrum run
+
++	unt=arr[2]#index of parameter to be free
+
++	#interes
+
++	lab[unt]=labels[0]
+
++	first=relu(np.dot(w_array_0,lab)+ b_array_0)
+
++	snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
+
++	trd=np.dot(w_array_2[set],snd) + b_array_2[set]
+
++	predict_flux = trd
+
++	www=w0[set]*(1+6*labels[1]/299792.458)
+
++	flux=np.interp(w0[set],www,predict_flux)
+
++	return flux
+
++
+
++
+
++#wavelength scale in HR10
+
++wvl=5334+0.05*np.arange(5541)
+
++
+
++tis=[5336.78,5381.,5418.75,5514.45]
+
++#lists with problematic lines
+
++wgd=[5343.38,5349.49,5361.45,5421.2,5446.5,5391.65,5476.9,5503.08,5535.55,5577.34]
+
++wgd=[5503.08,5577.34]
+
++
+
++#normalisation used in apogee 
+
++def fit_aspcap(wav,spec,specerr,deg,niter,usigma,lsigma):
+
++	"""Fit the continuum with an iterative upper/lower rejection"""
+
++	# Initial fit
+
++	chpoly= np.polynomial.Chebyshev.fit(wav,spec,deg,w=1./specerr)
+
++	tcont= chpoly(wav)
+
++	tres= spec-tcont
+
++	sig= np.std(tres)
+
++	mask= (tres < usigma*sig)*(tres > -lsigma*sig)
+
++	spec[True^mask]= chpoly(wav[True^mask])
+
++	for ii in range(niter):
+
++		chpoly= np.polynomial.Chebyshev.fit(wav,spec,deg,w=1./specerr)
+
++		tcont= chpoly(wav)
+
++		tres= spec-tcont
+
++		sig= np.std(tres)
+
++		mask= (tres < usigma*sig)*(tres > -lsigma*sig)
+
++		spec[True^mask]= chpoly(wav[True^mask])
+
++		# plt.plot(wav,spec)
+
++		# plt.plot(wav[True^mask],spec[True^mask])
+
++		# plt.show()
+
++	#print chpoly
+
++	
+
++	return chpoly(wav)
+
+ 
+
+ #fit the spectrum
+
+-def find_best_val(ind_spec_arr):
+
+-    
+
+-    """
+
+-    
+
+-    ind_spec_arr: array of inputs that determine how best fit variables will
+
+-    be found. Descriptions are below.
+
+-    
+
+-    return: final; best fit parameters in all dimensions of NN module
+
+-            efin_upper; the upper uncertainty of best parameters
+
+-            efin_lower; the lower uncertainty of best parameters
+
+-            rv_shift; the radial velocity shift of the spectra collected or calculated
+
+-            ch2_save; the reduced chi-squared value for the best fit spectra
+
+-            wvl_corrected; the wavelength of the best fit model spectra
+
+-            obs; the flux of the observed spectra post process (rv corrected, normalised, convolved etc)
+
+-            fit; the flux of the best fit model spectra in the rest frame
+
+-            snr_star; the SNR of the star
+
+-    
+
+-    purpose: This function takes in any spectra with a resolution the same as 
+
+-             or above the NN trained grid and can calculate the RV correction,
+
+-             continuum normalise the spectra, convolve the spectra down. 
+
+-             
+
+-             The spectra however processed is then used to find the best fit
+
+-             model spectra and so the best fit parameters associated with the 
+
+-             Payne NN trained module. 
+
+-             
+
+-             Currently you can apply an "error mask" which is a way of 
+
+-             including model uncertainties by adding the residual between 
+
+-             observed spectra and reference model in quadrature. You can pick 
+
+-             any spectra you want to create an error mask with.
+
+-             
+
+-             To further improve the best fit parameters, a procedure which uses
+
+-             asteroseismology data (specifically nu_max) to refine the logg
+
+-             estimate via an iterative process.
+
+-             
+
+-             If you would like to add another process or another way of
+
+-             treating the spectra, then you would have to add to the inputs,
+
+-             edit the part of the code which concerns curvefitting as there
+
+-             parameters can be fixed to a specific value or left free to vary.
+
+-             
+
+-             ###
+
+-             
+
+-             N.B. To read in a spectra, you have to create your own function,
+
+-             simply because fit files for different spectrographs are
+
+-             different. 
+
+-             
+
+-             There are 3 already here which read a text file, Gaia-ESO fit file
+
+-             and HARPS/UVES fit file.
+
+-             
+
+-             Note that if the rv correction does not come with the fit file,
+
+-             you must still output an rv correction, set it to NaN.
+
+-             
+
+-             Or like in the "read_txt_spectra()" function you can write a bool
+
+-             to use SAPP's rv correction calculation function to find it for 
+
+-             you.
+
+-             
+
+-             Alternatively if you already know the rv correction for the
+
+-             spectra, load it in with your spectra load function.
+
+-    
+
+-    """
+
+-    
+
+-                
+
+-    # spec_path = "../Input_data/spectroscopy_observation_data/" + ind_spec_arr[0]
+
+-        
+
+-    spec_path = "../../../Input_data/spectroscopy_observation_data/" + ind_spec_arr[0]
+
+-    
+
+-    # print("SPECTRAL PATH",spec_path)
+
+-    
+
+-    # observation spec we want to look at now
+
+-    
+
+-    # error_map_spec_path = "../Input_data/spectroscopy_observation_data/" + ind_spec_arr[1]
+
+-    error_map_spec_path = "../../../Input_data/spectroscopy_observation_data/" + ind_spec_arr[1]
+
+-    
+
+-    # observation spec we want to use for the error map
+
+-    
+
+-    error_mask_index = ind_spec_arr[2] 
+
+-    
+
+-    # Refers to list of reference values, Sun is index number 10
+
+-    
+
+-    error_mask_recreate_bool = ind_spec_arr[3]
+
+-    
+
+-    # If the error mask needs to be re-made or doesn't exist for the spectra, then this is True
+
+-    
+
+-    # otherwise, this is False
+
+-    
+
+-    error_map_use_bool = ind_spec_arr[4]
+
+-    
+
+-    # True: Use the error map (loaded or created), False: Do not use error map at all
+
+-    
+
+-    cont_norm_bool = ind_spec_arr[5]
+
+-    
+
+-    # True: Continuum normalise the spectra with SAPP's continuum procedure, False: Do not normalise
+
+-    
+
+-    rv_shift_recalc_arr = ind_spec_arr[6]
+
+-    
+
+-    rv_shift_recalc = rv_shift_recalc_arr[0]
+
+-    rv_min = rv_shift_recalc_arr[1]
+
+-    rv_max = rv_shift_recalc_arr[2]
+
+-    drv  = rv_shift_recalc_arr[3]
+
+-    
+
+-    # If rv shift from spectra needs to be re-calculated/doesn't exist, this is True
+
+-    
+
+-    # otherwise, this is False
+
+-    
+
+-    conv_instrument_bool = ind_spec_arr[7] 
+
+-    
+
+-    # True: convolve observation spectra to input resolution, False: Do not convolve spectra
+
+-    
+
+-    # Resolution_obs > input resolution, you cannot increase the resolution above what it already is.
+
+-    
+
+-    input_spec_resolution = ind_spec_arr[8]
+
+-    
+
+-    # Input resolution, this needs to match the Payne NN resolution file
+
+-    
+
+-    numax_iter_bool = ind_spec_arr[9]
+
+-    
+
+-    # True: Use nu_max input to improve logg estimation via iterative scaling process, False: do not use this info
+
+-    
+
+-    nu_max = ind_spec_arr[10][0]
+
+-    
+
+-    if np.isnan(nu_max) == True:
+
+-        
+
+-        numax_iter_bool = False
+
+-    
+
+-    # nu_max decided by user, if it is negative or NaN then there will be issues
+
+-    
+
+-    nu_max_err = ind_spec_arr[10][1]
+
+-    
+
+-    # uncertainty of nu_max, currently not used but might be useful
+
+-    
+
+-    niter_MAX = ind_spec_arr[10][2]
+
+-    
+
+-    # maximum number of iterations for this process, 5 is typically good enough
+
+-    
+
+-    recalc_metals_bool = ind_spec_arr[11]
+
+-    
+
+-    # True: re-calculate all parameters with Teff, logg, [Fe/H] fixed at some value, False: do not do this
+
+-    
+
+-    recalc_metals_inp = ind_spec_arr[12]
+
+-    
+
+-    # array [Teff,logg,[Fe/H]]
+
+-    
+
+-    logg_fix_bool = ind_spec_arr[13]
+
+-    
+
+-    logg_fix_inp_arr = ind_spec_arr[14]
+
+-    
+
+-    logg_fix = logg_fix_inp_arr[0]
+
+-    
+
+-    logg_fix_err_up = logg_fix_inp_arr[1]
+
+-    
+
+-    logg_fix_err_low = logg_fix_inp_arr[2]
+
+-    
+
+-    if np.isnan(logg_fix) == True:
+
+-        
+
+-        logg_fix_bool = False
+
+-
+
+-
+
+-    """
+
+-    Below is where the spectral information is fed in, this function should be tailored to the specific type of file
+
+-    and so can be easily changed. This information is all standard.
+
+-    """
+
+-    
+
+-    # print(nu_max,nu_max_err,numax_iter_bool)
+
+-    
+
+-    ### Gaia-ESO fit files
+
+-    
+
+-    # wavelength,\
+
+-    # flux_norm,\
+
+-    # error_med,\
+
+-    # rv_shift,\
+
+-    # rv_shift_err,\
+
+-    # snr_star,\
+
+-    # flux_norm_sigma_ave,\
+
+-    # flux_sigma_ave = read_fits_GES_GIR_spectra(spec_path) 
+
+-    
+
+-    ### Text files
+
+-
+
+-    wavelength,\
+
+-    flux_norm,\
+
+-    error_med,\
+
+-    rv_shift,\
+
+-    rv_shift_err,\
+
+-    snr_star = read_txt_spectra(spec_path,rv_calc=False)
+
+-    
+
+-    rv_shift = 0.5500000000056531 
+
+-    rv_shift_err = 0.05
+
+-    
+
+-    ### HARPS/UVES fit files
+
+-    
+
+-    # wavelength,\
+
+-    # flux_norm,\
+
+-    # error_med,\
+
+-    # rv_shift,\
+
+-    # rv_shift_err,\
+
+-    # snr_star = read_fits_spectra(spec_path)
+
+-    
+
+-    print("SNR",snr_star)
+
+-    # print("RV ",rv_shift,"+-",rv_shift_err,"Km/s")
+
+-    
+
+-    if snr_star <= 0: 
+
+-        
+
+-        # this can happen, for now the function returns zero
+
+-        
+
+-        # ideally SAPP would have a function that can calculate SNR incase you cannot
+
+-        
+
+-        # Note a good guess for HARPS is 300, and UVES is 200.
+
+-        
+
+-        return 0
+
+-    
+
+-    else:        
+
+-        
+
+-        if cont_norm_bool == True:
+
+-            
+
+-            # sigma clip the flux and error due to cosmic rays
+
+-            
+
+-            # do not go below 2, otherwise you're removing too much information
+
+-                
+
+-            flux_clipped = sigclip(flux_norm,sig=2.5)
+
+-            error_clipped = sigclip(error_med,sig=2.5)    
+
+-            
+
+-            ### before everything, continuum normalise
+
+-            
+
+-            # these are the zones which split up the spectra to normalise
+
+-            
+
+-            # further detail can be found in the continuum_normalise_spectra() script
+
+-            
+
+-            geslines_synth_loaded = np.loadtxt("sapp_seg_v1_hr10.txt")
+
+-            
+
+-            spec_norm_results = continuum_normalise_spectra(wavelength = wavelength,\
+
+-                                        flux = flux_clipped,\
+
+-                                        error_flux = error_clipped,\
+
+-                                        SNR_star = snr_star,\
+
+-                                        continuum_buffer=0,
+
+-                                        secondary_continuum_buffer=2.5,
+
+-                                        geslines_synth=geslines_synth_loaded,\
+
+-                                        med_bool=True)
+
+-            
+
+-            wavelength_normalised_stitch = spec_norm_results[0]
+
+-            flux_normalised_stitch = spec_norm_results[1]
+
+-            error_flux_normalised_stitch = spec_norm_results[2]
+
+-            # continuum_stitch = spec_norm_results[3]
+
+-            # geslines_synth = spec_norm_results[4]    
+
+-            
+
+-            wvl = wavelength_normalised_stitch
+
+-            obs = flux_normalised_stitch
+
+-            usert = error_flux_normalised_stitch
+
+-                    
+
+-        elif cont_norm_bool == False:
+
+-    
+
+-            wvl = wavelength
+
+-            obs = flux_norm
+
+-            usert = error_med
+
+-            
+
+-            
+
+-        if conv_instrument_bool == True: # convolve observation spectra to lower resolution
+
+-
+
+-            wvl,obs = convolve_python(wvl,obs,input_spec_resolution)
+
+-            
+
+-            # Should we convolve the error as well?
+
+-            
+
+-            # wvl_new,obs_new = convolve_python(wvl,obs,input_spec_resolution)
+
+-            # wvl_new,usert_new = convolve_python(usert,usert,input_spec_resolution)
+
+-            
+
+-            # overwrites the spectra with the convolved information 
+
+-            
+
+-        """
+
+-        Does the RV value exist? If not, calculate it.
+
+-        """
+
+-                
+
+-        spec_template_wvl = wvl_solar_model
+
+-        spec_template_flux = flux_solar_model
+
+-        
+
+-        # the values below should be edited outside of the function
+
+-        
+
+-        # there must be a more dynamic way of choosing drv and the limits
+
+-        
+
+-        # as it can take a bit of time
+
+-                
+
+-        spec_resolution = input_spec_resolution
+
+-        
+
+-        if np.isnan(rv_shift):
+
+-            
+
+-            # if the rv_shift doesn't exist, NaN is given. 
+
+-            
+
+-            print("Re-calculating RV correction...")
+
+-            
+
+-            
+
+-            rv_shift,rv_array,cross_corr = rv_cross_corelation_no_fft([wvl,obs,usert],\
+
+-                                                                  [spec_template_wvl,spec_template_flux],\
+
+-                                                                  rv_min,\
+
+-                                                                  rv_max,\
+
+-                                                                  drv,\
+
+-                                                                  title="",\
+
+-                                                                  savefig_bool=False,\
+
+-                                                                  Resolution=spec_resolution)
+
+-                
+
+-            rv_shift_err = drv
+
+-        
+
+-        if rv_shift_recalc == True:
+
+-            
+
+-            # if you want to re-calculate it, then it will
+
+-            
+
+-            print("Re-calculating RV correction...")
+
+-            
+
+-            
+
+-            rv_shift,rv_array,cross_corr = rv_cross_corelation_no_fft([wvl,obs,usert],\
+
+-                                                                  [spec_template_wvl,spec_template_flux],\
+
+-                                                                  rv_min,\
+
+-                                                                  rv_max,\
+
+-                                                                  drv,\
+
+-                                                                  title="",\
+
+-                                                                  savefig_bool=False,\
+
+-                                                                  Resolution=spec_resolution)
+
+-
+
+-
+
+-            rv_shift_err = drv
+
+-                
+
+-            print("Recalc RV ",rv_shift,"+-",drv,"Km/s")
+
+-
+
+-            
+
+-        # RV correcting the observed spectra's wavelength
+
+-        
+
+-        wvl_corrected = RV_correction_vel_to_wvl_non_rel(wvl,rv_shift) 
+
+-        
+
+-        
+
+-        """
+
+-        LIMIT TREATMENT
+
+-        
+
+-        Here the limits of the observation spectra are compared to the model.
+
+-        
+
+-        There's no guarantee they match, this could be a pre-process, but it 
+
+-        is annoying.
+
+-        
+
+-        The following lines ensure that the observed spectra matches the model
+
+-        spectra's wavelength limits. 
+
+-        
+
+-        """
+
+-        
+
+-        wvl_to_cut = [] # this will stay empty if model isn't being cut
+
+-    
+
+-        w0_new = w0
+
+-                    
+
+-        if min(wvl_corrected) > min(w0_new):
+
+-        
+
+-            # cut model to obs minimum
+
+-            
+
+-            wvl_min_bool = True # this will affect restore1
+
+-            
+
+-            w0_new = w0_new[w0_new >= min(wvl_corrected)]        
+
+-    
+
+-            wvl_to_cut = wvl_corrected
+
+-            
+
+-        else:
+
+-            
+
+-            wvl_min_bool = False # this will not affect restore1
+
+-                    
+
+-        if max(wvl_corrected) < max(w0_new): # basically your model should be cut like w0_new
+
+-        
+
+-            # cut model to obs minimum
+
+-            
+
+-            wvl_max_bool = True # this will affect restore1
+
+-    
+
+-            w0_new = w0_new[w0_new <= max(wvl_corrected)]        
+
+-            
+
+-            wvl_to_cut = wvl_corrected
+
+-            
+
+-        else:
+
+-            
+
+-            wvl_max_bool = False # this will not affect restore1
+
+-    
+
+-        # great, now obs is cut to model if it was bigger. If mod is bigger, then it'll pass on
+
+-    
+
+-        wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,wvl_to_cut))
+
+-    
+
+-        obs = np.interp(w0_new,wvl_corrected,obs) # this will cut obs to model if model is smaller
+
+-        usert = np.interp(w0_new,wvl_corrected,usert)
+
+-        wvl_corrected = np.interp(w0_new,wvl_corrected,wvl_corrected)
+
+-                
+
+-        
+
+-        
+
+-        if error_map_use_bool == True:
+
+-            
+
+-            if error_mask_recreate_bool == True:
+
+-
+
+-                print("USING STELLAR ERROR MASK")
+
+-                
+
+-                residual_error_map = create_error_mask(error_map_spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution)
+
+-            
+
+-    #         error_mask_filename = error_map_spec_path.replace(".fit","")
+
+-    
+
+-    #         residual_error_map = np.loadtxt(f"{error_mask_filename}_error_mask.txt")
+
+-    
+
+-    #         residual_error_map = np.loadtxt("gar_ssssssss-sssssss_H548.8_106_error_mask.txt")
+
+-                
+
+-    
+
+-                # emask_save = ind_spec_arr[1].replace("emask_input_spectra","test_spectra_emasks")
+
+-                            
+
+-                # np.savetxt("../../../Output_data/"+emask_save,residual_error_map,header="Wavelength [AA], \t abs(Emask), \t Emask")
+
+-    
+
+-                residual_error_map_arr = [residual_error_map]
+
+-    
+
+-            else:
+
+-                
+
+-                # print("USING SOLAR ERROR MASK")
+
+-                print("USING TEFF VARYING ERROR MASK")
+
+-                
+
+-                # error_mask_filename = error_map_spec_path.replace(".fit","").replace(".fits","").replace(".txt","")
+
+-    
+
+-                # residual_error_map = np.loadtxt(f"{error_mask_filename}_error_mask.txt") ## assuming the error mask has been created already
+
+-
+
+-                # residual_error_map = np.loadtxt("../../../Output_data/test_spectra_emasks/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
+
+-                # residual_error_map = np.loadtxt("../Output_data/test_spectra_emasks/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
+
+-                
+
+-                
+
+-                # residual_error_map_1 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                # residual_error_map_2 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                # residual_error_map_3 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
+
+-                # residual_error_map_4 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+
+-
+
+-                # residual_error_map_arr = [residual_error_map_1,
+
+-                #                           residual_error_map_2,
+
+-                #                           residual_error_map_3,
+
+-                #                           residual_error_map_4]
+
+-                
+
+-                
+
+-                ''
+
+-                if float(PLATO_bmk_lit[:,1][error_mask_index]) < 5500:
+
+-                    
+
+-                    ### load low temp error mask :  del eri
+
+-
+
+-                     residual_error_map_1 = np.loadtxt("../../../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr246_UVES_52.774g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                     residual_error_map_2 = np.loadtxt("../../../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr262_UVES_52.794g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                     residual_error_map_3 = np.loadtxt("../../../Output_data/test_spectra_emasks/deleri/UVES_delEri_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")         
+
+-
+
+-                     # residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr246_UVES_52.774g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                     # residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr262_UVES_52.794g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                     # residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/UVES_delEri_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")         
+
+-                
+
+-                     residual_error_map_arr = [residual_error_map_1,
+
+-                                               residual_error_map_2,
+
+-                                               residual_error_map_3]
+
+-                     
+
+-                elif 5500 <= float(PLATO_bmk_lit[:,1][error_mask_index]) < 6000:
+
+-                    
+
+-                    ### load medium temp error mask : the sun
+
+-                    
+
+-                     residual_error_map_1 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                     residual_error_map_2 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                     residual_error_map_3 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
+
+-                     residual_error_map_4 = np.loadtxt("../../../Output_data/test_spectra_emasks/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+
+-
+
+-                     # residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                     # residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                     # residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
+
+-                     # residual_error_map_4 = np.loadtxt("../Output_data/test_spectra_emasks/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+
+-
+
+-                     residual_error_map_arr = [residual_error_map_1,
+
+-                                               residual_error_map_2,
+
+-                                               residual_error_map_3,
+
+-                                               residual_error_map_4]
+
+-                     
+
+-                
+
+-                elif float(PLATO_bmk_lit[:,1][error_mask_index]) >= 6000:
+
+-                    
+
+-                    ### load high temp error mask : Procyon
+
+-                    
+
+-                    residual_error_map_1 = np.loadtxt("../../../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr493_UVES_21.007g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                    residual_error_map_2 = np.loadtxt("../../../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr544_UVES_21.033g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                    residual_error_map_3 = np.loadtxt("../../../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr549_UVES_48.418g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                    residual_error_map_4 = np.loadtxt("../../../Output_data/test_spectra_emasks/Procyon/HARPS_Procyon_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                    residual_error_map_5 = np.loadtxt("../../../Output_data/test_spectra_emasks/Procyon/UVES_Procyon_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+
+-
+
+-                    # residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr493_UVES_21.007g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                    # residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr544_UVES_21.033g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                    # residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr549_UVES_48.418g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+
+-                    # residual_error_map_4 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/HARPS_Procyon_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+
+-                    # residual_error_map_5 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/UVES_Procyon_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+
+-
+
+-
+
+-                    residual_error_map_arr = [residual_error_map_1,
+
+-                                               residual_error_map_2,
+
+-                                               residual_error_map_3,
+
+-                                               residual_error_map_4,
+
+-                                               residual_error_map_5]
+
+-
+
+-                ''
+
+-
+
+-            # this function compares the error masks to the spectra it is being combined with
+
+-            # processes it such that the wavelength scale and limits match the observations
+
+-            # any points missing are designated to be zero
+
+-            # any points extra are simply cut out
+
+-            
+
+-            wvl_err_mask_collect = []
+
+-            err_mask_collect = []
+
+-            
+
+-            for emask_number in range(len(residual_error_map_arr)):
+
+-
+
+-                wvl_err_mask_dummy , err_mask_dummy = error_mask_trim_process(residual_error_map_arr[emask_number],wvl_corrected,obs)
+
+-
+
+-                wvl_err_mask_collect.append(wvl_err_mask_dummy)
+
+-                err_mask_collect.append(err_mask_dummy)
+
+-                
+
+-            wvl_err_mask_ave = np.mean(np.array(wvl_err_mask_collect),axis=0)
+
+-            err_mask_collect_ave = np.mean(np.array(err_mask_collect),axis=0)
+
+-                        
+
+-            # sanity check, these should all be the same #
+
+-            # print(wvl_err_mask_collect[0])
+
+-            # print(wvl_corrected)
+
+-            # print(wvl_err_mask_ave)
+
+-            
+
+-            # if (wvl_err_mask_ave == wvl_corrected).all() == False:
+
+-                
+
+-            #     print("something went wrong! Error mask wavelength doesn't match observed wavelength")
+
+-                
+
+-            err_mask = err_mask_collect_ave 
+
+-            wvl_err_mask = wvl_err_mask_ave
+
+-            
+
+-            
+
+-            
+
+-            
+
+-            """
+
+-            IF error mask wvl is larger than current wvl obs, simply interpolate.
+
+-            cutting of edges is done for you.
+
+-            
+
+-            Else (error mask wvl is smaller than current wvl obs), interpolate, the
+
+-            wavlength values will repeat, change those repeats to zeros.
+
+-            """
+
+-            
+
+-            '''
+
+-            wvl_err_mask = residual_error_map[:,0]
+
+-            err_mask = residual_error_map[:,1]
+
+-
+
+-            # print("wvl emask ",wvl_err_mask)
+
+-            # print("wvl obs ",wvl_corrected)
+
+-        
+
+-            # plt.plot(wvl_err_mask,err_mask,'g-',label='emask')
+
+-
+
+-            # if error_mask_recreate_bool == False:
+
+-
+
+-                ### interpolate the error mask onto the stellar wavelength scale
+
+-                
+
+-                # err_mask_interp = sci.UnivariateSpline(wvl_err_mask,err_mask,k=5)
+
+-                
+
+-                # err_mask = err_mask_interp(wvl_corrected)
+
+-                # wvl_err_mask = wvl_corrected
+
+-                
+
+-            # print("wvl_emask",wvl_err_mask)
+
+-            # print("emask",err_mask)
+
+-            
+
+-            # print("================================")
+
+-
+
+-            # print("wvl_emask_new",wvl_corrected)
+
+-            # print("emask_new",err_mask_new)
+
+-            
+
+-            # plt.plot(wvl_corrected,obs,'b-',label='obs')
+
+-            # plt.plot(wvl_err_mask,err_mask,'r-',label='emask interp')
+
+-                
+
+-            # plt.legend(loc='upper right')
+
+-            # plt.show()
+
+-            
+
+-                                
+
+-            ### DEALLING WITH MINIMA ###
+
+-
+
+-            # plt.plot(wvl_err_mask,err_mask,'b-',label='emask')            
+
+-
+
+-            if min(wvl_err_mask) < min(wvl_corrected):
+
+-                # cut the error mask down to shape
+
+-                
+
+-                # print("wvl_err_mask",wvl_err_mask,len(wvl_err_mask))
+
+-                # print("wvl_corrected",wvl_corrected,len(wvl_corrected))
+
+-                
+
+-                err_mask = err_mask[wvl_err_mask >= min(wvl_corrected)]
+
+-                wvl_err_mask = wvl_err_mask[wvl_err_mask >= min(wvl_corrected)]
+
+-                
+
+-            elif min(wvl_err_mask) > min(wvl_corrected):
+
+-                
+
+-                # print(wvl_corrected,len(wvl_corrected),len(obs))
+
+-                # print(wvl_err_mask,len(wvl_err_mask),len(err_mask))
+
+-
+
+-                # print(wvl_err_mask[:20],len(wvl_err_mask))
+
+-                # print(err_mask[:20],len(err_mask))
+
+-
+
+-                
+
+-                # print(len(wvl_err_mask),len(err_mask))
+
+-                
+
+-                # little more tricky, cannot create data nor cut the observed spec down
+
+-                # solution, pad with zeroes, it will not effect the overall error
+
+-                
+
+-                wvl_obs_min = min(wvl_corrected)
+
+-                delta_obs = wvl_corrected[1] - wvl_corrected[0] # should be the same for all
+
+-                
+
+-                wvl_errmask_min = min(wvl_err_mask)
+
+-                delta_errmask = wvl_err_mask[1] - wvl_err_mask[0] # should be the same for all
+
+-                                
+
+-                # the difference in wavelength between minima
+
+-                
+
+-                wvl_range =  wvl_errmask_min - wvl_obs_min
+
+-                
+
+-                # print(wvl_range,wvl_errmask_min, wvl_obs_min)
+
+-                
+
+-                # the number of zeros we have to attach to the err mask y array
+
+-                
+
+-                # N_zeros = int(np.round(wvl_range/delta_errmask)) # this is assuming that del err mask is same as del obs
+
+-                # N_zeros = int(np.round(wvl_range/delta_obs)) # this is assuming that del err mask is same as del obs
+
+-                                            
+
+-                # print(N_zeros)
+
+-                
+
+-                # print(wvl_err_mask[:6],len(wvl_err_mask))
+
+-                # print(err_mask[:6],len(err_mask))
+
+-                # print(int(np.round(wvl_range/delta_obs)),int(np.round(wvl_range/delta_errmask)))
+
+-                
+
+-                # create array to tac on to the original
+
+-                
+
+-                # wvl_tac = np.arange(wvl_obs_min,wvl_errmask_min,delta_errmask)
+
+-                wvl_tac = np.arange(wvl_obs_min,wvl_errmask_min-delta_obs,delta_obs)
+
+-
+
+-                N_zeros = len(wvl_tac)
+
+-                                            
+
+-                errmask_tac = np.zeros([N_zeros])
+
+-                
+
+-                wvl_err_mask = np.hstack((wvl_tac,wvl_err_mask))
+
+-                
+
+-                err_mask = np.hstack((errmask_tac,err_mask))
+
+-
+
+-                
+
+-
+
+-
+
+-            ### DEALING WITH MAXIMA ###
+
+-            
+
+-            if max(wvl_err_mask) > max(wvl_corrected):
+
+-                
+
+-                # cut the error mask down to shape, simple
+
+-                
+
+-                # print(len(wvl_err_mask),len(err_mask))
+
+-                
+
+-                err_mask  = err_mask [wvl_err_mask  <= max(wvl_corrected)]
+
+-                wvl_err_mask  = wvl_err_mask [wvl_err_mask  <= max(wvl_corrected)]
+
+-                
+
+-            elif max(wvl_err_mask ) < max(wvl_corrected):
+
+-                
+
+-                # print(wvl_corrected,len(wvl_corrected),len(obs))
+
+-                # print(wvl_err_mask,len(wvl_err_mask),len(err_mask))
+
+-                
+
+-                # you need to pad with some zeroes
+
+-                
+
+-                wvl_obs_max = max(wvl_corrected)
+
+-                delta_obs = wvl_corrected[1] - wvl_corrected[0] # should be the same for all
+
+-                
+
+-                wvl_errmask_max = max(wvl_err_mask)
+
+-                delta_errmask = wvl_err_mask[1] - wvl_err_mask[0] # should be the same for all
+
+-                
+
+-                wvl_range =  wvl_obs_max - wvl_errmask_max
+
+-                
+
+-                # N_zeros = int(np.round(wvl_range/delta_errmask)) # this is assuming that del err mask is same as del obs
+
+-                
+
+-                wvl_tac = np.arange(wvl_errmask_max,wvl_obs_max,delta_errmask)
+
+-                
+
+-                N_zeros = len(wvl_tac)
+
+-                    
+
+-                errmask_tac = np.zeros([N_zeros])
+
+-    
+
+-                wvl_err_mask = np.hstack((wvl_err_mask ,wvl_tac))
+
+-                
+
+-                err_mask = np.hstack((err_mask,errmask_tac))
+
+-                
+
+-            
+
+-            # print("wvl emask ",wvl_err_mask)
+
+-            # print("wvl obs ",wvl_corrected)
+
+-            
+
+-            # print(wvl_err_mask[:20],len(wvl_err_mask))
+
+-            # print(err_mask[:20],len(err_mask))
+
+-            
+
+-            ### now interpolate emask over to same wavelength scale as obs
+
+-            
+
+-            # if error_mask_recreate_bool == False:
+
+-            
+
+-            try:    
+
+-            
+
+-                emask_func = sci.interp1d(wvl_err_mask,err_mask)
+
+-                err_mask = emask_func(wvl_corrected)
+
+-                wvl_err_mask = wvl_corrected
+
+-                
+
+-            except:
+
+-                
+
+-                print(f"Interpolation of error mask failed for {ind_spec_arr[0]} ")
+
+-                sys.exit()
+
+-            '''    
+
+-                
+
+-            
+
+-            '''
+
+-            # plt.plot(wvl_err_mask,err_mask)            
+
+-            plt.plot(wvl_err_mask_new,err_mask_new,color='r',linestyle='--',label='new emask')
+
+-            plt.legend(loc='upper right')
+
+-            
+
+-            axes = plt.gca()
+
+-            axes.set_xlim([5336,5340])
+
+-            # axes.set_ylim([ymin,ymax])
+
+-            
+
+-            plt.show
+
+-            '''
+
+-            
+
+-    
+
+-            usert = (usert**2 + err_mask**2)**0.5
+
+-    
+
+-        popt=[0]
+
+-        
+
+-        
+
+-        """
+
+-        LINE MASKING
+
+-        
+
+-        This is for regions of the code which have bad lines, so they get
+
+-        'Noised-Up'.
+
+-        
+
+-        Not the best method, however it works for the fitting routine.
+
+-        
+
+-        Reconmended for regions which show signs of Tellurics.
+
+-        """
+
+-        
+
+-        #masking=False
+
+-        #masking=True
+
+-        #set error_spectrum=1000 around masked lines
+
+-        if masking:
+
+-    #        wav=wvl/(1+(rv+popt[0])/299792.458)
+
+-            #mask experiment
+
+-            windx=np.array([])
+
+-            for i in range(len(wgd)):
+
+-                windx=np.append(windx,np.where(abs(wvl_corrected-wgd[i])<1.751)[0])
+
+-            windx=[int(it) for it in windx]
+
+-            windx=np.unique(windx)
+
+-            #print(len(windx))
+
+-            spix=wvl_corrected<0
+
+-            spix[windx]=True
+
+-            usert[spix]=1000
+
+-            
+
+-        
+
+-        """
+
+-        An overall estimate of Teff, logg, [Fe/H] may already exist
+
+-        and the only thing left to do is based on those parameters, 
+
+-        recalculate the others using this module.
+
+-        
+
+-        If the user would like to use the iterative mode/just find a full 
+
+-        solution then set this to False.
+
+-        """
+
+-        
+
+-        popt_init= np.zeros(num_labels+1+cheb)
+
+-        
+
+-        popt_init[1] = (6900/1000-x_min[0])/(x_max[0]-x_min[0])-0.5
+
+-        popt_init[2] = (4.8-x_min[1])/(x_max[1]-x_min[1])-0.5
+
+-        popt_init[3] = (0.3-x_min[2])/(x_max[2]-x_min[2])-0.5
+
+-        
+
+-        if recalc_metals_bool == True: 
+
+-            
+
+-            temp_fix = recalc_metals_inp[0]
+
+-            logg_fix = recalc_metals_inp[1]
+
+-            feh_fix = recalc_metals_inp[2]
+
+-            fix_feh_bool = recalc_metals_inp[3] 
+
+-            
+
+-            # if this is True, then fix to value above
+
+-            # if this is False, then doesn't matter, it'll be recalculated
+
+-            
+
+-            #flag for success
+
+-            suc=True
+
+-            #argiments for curve_fit
+
+-            kwargs={'loss':'linear',"max_nfev":1e8,'xtol':1e-4}
+
+-        
+
+-            try:
+
+-                init= np.zeros(num_labels+1+cheb)
+
+-                lb=init-0.49 # was 0.51 before
+
+-                hb=init+0.49
+
+-                
+
+-                fix=0#Teff index
+
+-                init[fix+1]=(temp_fix/1000-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-                
+
+-                fix=1#logg index
+
+-                init[fix+1]=(logg_fix-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-        
+
+-                if fix_feh_bool == True: # if this is true then feh is fixed to best fit value from grids
+
+-                        fix=2#feh index
+
+-                        init[fix+1]=(feh_fix-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                        lb[fix+1]=init[fix+1]-1e-4
+
+-                        hb[fix+1]=init[fix+1]+1e-4
+
+-        
+
+-                popt, pcov = curve_fit(restore1,wvl_obs_input,\
+
+-                       obs,\
+
+-                       p0 = init,\
+
+-                       #p0 = np.zeros(num_labels+1+cheb),\
+
+-                       sigma=usert,\
+
+-                       #sigma=obs*0+1,\
+
+-                       absolute_sigma=True,\
+
+-                       bounds=(lb,hb),**kwargs)
+
+-                
+
+-                suc=True
+
+-            except RuntimeError:
+
+-                print("Error - curve_fit failed ")#stars[ind_spec])
+
+-                popt=np.ones(num_labels+1+cheb)
+
+-                pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+
+-                popt*=np.nan
+
+-                suc=False
+
+-        
+
+-            
+
+-            #only spectral parameters 
+
+-            if cheb == 0:
+
+-                
+
+-                labels_fit = popt[1:]
+
+-                #error from curve_fit
+
+-                efin=np.sqrt(pcov.diagonal()[1:])
+
+-                                
+
+-            elif cheb >=1:
+
+-                                
+
+-                labels_fit = popt[1:-cheb]
+
+-                #error from curve_fit
+
+-                efin=np.sqrt(pcov.diagonal()[1:-cheb])
+
+-
+
+-        
+
+-            #renormalise spectral parameters
+
+-            final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
+
+-
+
+-            print("BEST fit parameters =",final)
+
+-            
+
+-        #    print(str(ind_spec)+" "+stars[ind_spec]+np.array_str(final, precision=3)+" SNR="+str(snr[ind_spec])+" RV="+str(rv+popt[0]))
+
+-                
+
+-            #renormalise spectral parameters errors
+
+-            efin=efin*(x_max-x_min)
+
+-
+
+-            efin_upper = efin
+
+-            efin_lower = efin
+
+-
+
+-            print("parameters ERROR upper =",efin_upper)
+
+-            print("parameters ERROR lower =",efin_lower)
+
+-            
+
+-        elif recalc_metals_bool == False:
+
+-        
+
+-            """
+
+-            Finding all the best fit parameters and so model.
+
+-            """
+
+-                
+
+-            #flag for success
+
+-            suc=True
+
+-            #argiments for curve_fit
+
+-            kwargs={'loss':'linear',"max_nfev":1e8,'xtol':1e-4}
+
+-                
+
+-            try:
+
+-                    
+
+-                popt, pcov = curve_fit(restore1,wvl_obs_input,\
+
+-                                      obs,\
+
+-                                      p0 = popt_init,#np.zeros(num_labels+1+cheb),\
+
+-                                      sigma=usert,\
+
+-                                      absolute_sigma=True,\
+
+-                                      bounds=(-.49,.49),**kwargs) # was 0.59 before
+
+-                suc=True
+
+-            except RuntimeError:
+
+-                       # print("Error - curve_fit failed 4:")
+
+-                       popt=np.ones(num_labels+1+cheb)
+
+-                       pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+
+-                       popt*=np.nan
+
+-                       suc=False
+
+-        
+
+-                     #only spectral parameters 
+
+-            if cheb == 0:
+
+-                            labels_fit = popt[1:]
+
+-                         #error from curve_fit
+
+-                            efin=np.sqrt(pcov.diagonal()[1:])
+
+-                        
+
+-            elif cheb >=1:
+
+-                        
+
+-                            labels_fit = popt[1:-cheb]
+
+-                         #error from curve_fit
+
+-                            efin=np.sqrt(pcov.diagonal()[1:-cheb])
+
+-                                            
+
+-                     #renormalise spectral parameters
+
+-            final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
+
+-                    
+
+-            print("BEST fit parameters =",final)
+
+-            
+
+-            #renormalise spectral parameters errors
+
+-            efin=efin*(x_max-x_min)
+
+-                
+
+-            efin_upper = efin
+
+-            efin_lower = efin
+
+-             
+
+-            print("parameters ERROR upper =",efin_upper)
+
+-            print("parameters ERROR lower =",efin_lower)
+
+-             
+
+-            
+
+-            if numax_iter_bool == True:
+
+-                
+
+-                """
+
+-                The estimates above are a first gues. 
+
+-                
+
+-                Now calculate the logg from Teff and nu_max via scaling relation.
+
+-                
+
+-                Rinse and repeat until maximum iteration.
+
+-                
+
+-                Within iterations, find the "best" parameters by determining when
+
+-                the Teff estimate doesn't change within 10 K. 
+
+-                
+
+-                N.B. DO THIS USING NU MAX +- NU MAX ERROR, THEREFORE NEED TO TRIPLE THE CALCULATIONS
+
+-                
+
+-                """
+
+-                
+
+-                nu_max_iter_arr = [nu_max-nu_max_err,nu_max,nu_max+nu_max_err]
+
+-                
+
+-                final_nu_max_collect = []
+
+-                efin_nu_max_collect = []
+
+-                popt_nu_max_collect = []
+
+-                pcov_nu_max_collect = []
+
+-                
+
+-                for nu_max_loop in range(len(nu_max_iter_arr)):
+
+-                    
+
+-                    if nu_max_loop == 0:
+
+-                        
+
+-                        print("====== nu_max lower ======")
+
+-                        
+
+-                    if nu_max_loop == 1:
+
+-                        
+
+-                        print("====== nu_max central ======")
+
+-                        
+
+-                    if nu_max_loop == 2:
+
+-                        
+
+-                        print("====== nu_max upper ======")
+
+-                
+
+-                    ncount = 0        
+
+-                    
+
+-                    final_collect = [final]
+
+-                    efin_collect = [efin]
+
+-                    popt_collect = [popt]
+
+-                    
+
+-                    while ncount <= niter_MAX:
+
+-                        
+
+-                        # print(type(nu_max),astroc.nu_max_sol,final[0],astroc.teff_sol,astroc.surf_grav_sol)
+
+-                        
+
+-                        logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+
+-            
+
+-                        # print(nu_max_loop,ncount,final[0]*1000,logg_numax)
+
+-                        
+
+-                        print(nu_max_loop,ncount,logg_numax,":",nu_max_iter_arr[nu_max_loop],astroc.nu_max_sol,final[0]*1000,astroc.teff_sol,astroc.surf_grav_sol)
+
+-            
+
+-                        try:
+
+-                                init= np.zeros(num_labels+1+cheb)
+
+-                                lb=init-0.51
+
+-                                hb=init+0.51
+
+-                                    
+
+-                                fix=1#logg index
+
+-                                init[fix+1]=(logg_numax-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                                lb[fix+1]=init[fix+1]-1e-4
+
+-                                hb[fix+1]=init[fix+1]+1e-4
+
+-                    
+
+-                                popt, pcov = curve_fit(restore1,wvl_obs_input,\
+
+-                                   obs,\
+
+-                                   p0 = init,\
+
+-                                   #p0 = np.zeros(num_labels+1+cheb),\
+
+-                                   sigma=usert,\
+
+-                                   #sigma=obs*0+1,\
+
+-                                   absolute_sigma=True,\
+
+-                                   bounds=(lb,hb),**kwargs)
+
+-                    
+
+-                                suc=True
+
+-                        except RuntimeError:
+
+-                                print("Error - curve_fit failed")#stars[ind_spec])
+
+-                                popt=np.ones(num_labels+1+cheb)
+
+-                                pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+
+-                                popt*=np.nan
+
+-                                suc=False
+
+-                            
+
+-                                #only spectral parameters 
+
+-                        if cheb == 0:
+
+-                                labels_fit = popt[1:]
+
+-                                    #error from curve_fit
+
+-                                efin=np.sqrt(pcov.diagonal()[1:])
+
+-                                    
+
+-                        elif cheb >=1:
+
+-                                    
+
+-                                labels_fit = popt[1:-cheb]
+
+-                                    #error from curve_fit
+
+-                                efin=np.sqrt(pcov.diagonal()[1:-cheb])
+
+-                                    
+
+-                                #renormalise spectral parameters
+
+-                        final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
+
+-                            
+
+-                            #renormalise spectral parameters errors
+
+-                        efin=efin*(x_max-x_min)
+
+-                        
+
+-                        efin_upper = efin
+
+-                        efin_lower = efin
+
+-                        
+
+-                        # print("===== niter_loop",nu_max_loop,"===== niter",ncount+1,"============================================")
+
+-                        # print("BEST fit parameters =",final)
+
+-                        # print("parameters ERROR upper =",efin_upper)
+
+-                        # print("parameters ERROR lower =",efin_lower)
+
+-                        # print("======================================================")
+
+-                        
+
+-                        ncount += 1
+
+-                        
+
+-                        final_collect.append(final)
+
+-                        efin_collect.append(efin)
+
+-                        popt_collect.append(popt)
+
+-                    
+
+-                    
+
+-                    # need to search through and find where Tdiff = 10
+
+-                    for tdiff_search_loop in range(1,len(final_collect)):
+
+-                        
+
+-                           tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])*1000
+
+-                        
+
+-                           if tdiff_dummy <= 10:
+
+-                               
+
+-                                if tdiff_search_loop == len(final_collect)-1:
+
+-            
+
+-                                    tdiff_index = tdiff_search_loop # this temperature is the one we want as it only changes by 10 K
+
+-                                    
+
+-            
+
+-                                else:                   
+
+-                            
+
+-                                    tdiff_index = tdiff_search_loop+1 # this temperature is the one we want as it only changes by 10 K
+
+-                            
+
+-                                break
+
+-            
+
+-                    tdiff_dummy_collect = [] 
+
+-            
+
+-                    # need to search through and find where Tdiff = 10
+
+-                    for tdiff_search_loop in range(1,len(final_collect)):
+
+-                        
+
+-                           tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])*1000
+
+-                        
+
+-                           tdiff_dummy_collect.append(tdiff_dummy)
+
+-            
+
+-                    final = final_collect[tdiff_index]
+
+-                    popt = popt_collect[tdiff_index]        
+
+-                    efin_spec = efin_collect[tdiff_index]         
+
+-                        
+
+-                    """
+
+-                    Error is calculated by collecting all the values from the "oscillatory"
+
+-                    section of the iterations. As the solution will vary within the bounds
+
+-                    of this region.
+
+-                    """
+
+-                    
+
+-                    efin = np.array([\
+
+-                            (np.std(np.array(final_collect)[:,0][tdiff_index:])**2 + efin_spec[0]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,1][tdiff_index:])**2 + efin_spec[1]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,2][tdiff_index:])**2 + efin_spec[2]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,3][tdiff_index:])**2 + efin_spec[3]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,4][tdiff_index:])**2 + efin_spec[4]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,5][tdiff_index:])**2 + efin_spec[5]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,6][tdiff_index:])**2 + efin_spec[6]**2)**0.5,\
+
+-                            (np.std(np.array(final_collect)[:,7][tdiff_index:])**2 + efin_spec[7]**2)**0.5])
+
+-
+
+-                    # efin = np.array([\
+
+-                    #        np.std(np.array(final_collect)[:,0][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,1][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,2][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,3][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,4][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,5][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,6][tdiff_index:]),\
+
+-                    #        np.std(np.array(final_collect)[:,7][tdiff_index:])])
+
+-                    
+
+-                    
+
+-                        
+
+-                        
+
+-            #         if tdiff_index < len(final_collect)-1:
+
+-                        
+
+-            #             efin = final_collect[tdiff_index+1]-final_collect[tdiff_index]
+
+-                        
+
+-            #         elif tdiff_index == len(final_collect)-1:
+
+-                        
+
+-            #             efin = final_collect[tdiff_index]-final_collect[tdiff_index-1]
+
+-            
+
+-            #         print(np.std(np.array(final_collect)[:,0])*1000)
+
+-            #         print(np.std(np.array(final_collect)[:,0][tdiff_index:])*1000)
+
+-            #         print(np.std(np.array(final_collect)[:,0][tdiff_index+1:])*1000)
+
+-            
+
+-            #         print(np.std(np.array(final_collect)[:,1]))
+
+-            #         print(np.std(np.array(final_collect)[:,1][tdiff_index:]))
+
+-            #         print(np.std(np.array(final_collect)[:,1][tdiff_index+1:]))
+
+-            
+
+-                    
+
+-                    # efin_upper = efin
+
+-                    # efin_lower = efin
+
+-                    
+
+-            #         final_collect_differences = np.array(final) - np.array(final_collect) # find differences between chosen final set and the whole list
+
+-                    
+
+-            #         print(final_collect_differences)
+
+-                    
+
+-            #         final_upper = final_collect[np.argmax(final_collect_differences[:,0])] # find maximum temp diff
+
+-            #         final_lower = final_collect[np.argmin(final_collect_differences[:,0])] # find minimum temp diff
+
+-                    
+
+-            #         efin_upper = final_upper - final
+
+-            #         efin_lower = final - final_lower
+
+-                    
+
+-                    # print("BEST fit parameters =",final)
+
+-                    # print("parameters ERROR upper =",efin_upper)
+
+-                    # print("parameters ERROR lower =",efin_lower)
+
+-                    
+
+-                    final_nu_max_collect.append(final)
+
+-                    efin_nu_max_collect.append(efin)
+
+-                    popt_nu_max_collect.append(popt)
+
+-                    pcov_nu_max_collect.append(pcov)
+
+-                    
+
+-                    
+
+-                d_final_upper = final_nu_max_collect[2] - final_nu_max_collect[1]
+
+-                d_final_lower = final_nu_max_collect[1] - final_nu_max_collect[0]
+
+-                
+
+-                print("lower syst error", d_final_lower)
+
+-                print("upper syst error",d_final_upper)
+
+-                
+
+-                efin_upper =  (efin_nu_max_collect[2] ** 2 + d_final_upper ** 2)**0.5
+
+-                efin_lower = (efin_nu_max_collect[0] ** 2 + d_final_lower ** 2)**0.5
+
+-                
+
+-                final = final_nu_max_collect[1]
+
+-                popt = popt_nu_max_collect[1]
+
+-                pcov = pcov_nu_max_collect[1]
+
+-                
+
+-                
+
+-            elif logg_fix_bool == True:
+
+-                
+
+-                
+
+-                logg_fix_arr = [logg_fix-logg_fix_err_low,logg_fix,logg_fix + logg_fix_err_up]
+
+-                
+
+-                final_logg_collect = []
+
+-                efin_logg_collect = []
+
+-                popt_logg_collect = []
+
+-                pcov_logg_collect = []
+
+-                
+
+-                
+
+-                for logg_loop in logg_fix_arr:
+
+-                    
+
+-                    
+
+-                
+
+-                    try:
+
+-                                    init= np.zeros(num_labels+1+cheb)
+
+-                                    lb=init-0.51
+
+-                                    hb=init+0.51
+
+-                                        
+
+-                                    fix=1#logg index
+
+-                                    init[fix+1]=(logg_loop-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                                    lb[fix+1]=init[fix+1]-1e-4
+
+-                                    hb[fix+1]=init[fix+1]+1e-4
+
+-                        
+
+-                                    popt, pcov = curve_fit(restore1,wvl_obs_input,\
+
+-                                       obs,\
+
+-                                       p0 = init,\
+
+-                                       #p0 = np.zeros(num_labels+1+cheb),\
+
+-                                       sigma=usert,\
+
+-                                       #sigma=obs*0+1,\
+
+-                                       absolute_sigma=True,\
+
+-                                       bounds=(lb,hb),**kwargs)
+
+-                        
+
+-                                    suc=True
+
+-                    except RuntimeError:
+
+-                                    print("Error - curve_fit failed")#stars[ind_spec])
+
+-                                    popt=np.ones(num_labels+1+cheb)
+
+-                                    pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+
+-                                    popt*=np.nan
+
+-                                    suc=False
+
+-                                
+
+-                                    #only spectral parameters 
+
+-                    if cheb == 0:
+
+-                                    labels_fit = popt[1:]
+
+-                                        #error from curve_fit
+
+-                                    efin=np.sqrt(pcov.diagonal()[1:])
+
+-                                        
+
+-                    elif cheb >=1:
+
+-                                        
+
+-                                    labels_fit = popt[1:-cheb]
+
+-                                        #error from curve_fit
+
+-                                    efin=np.sqrt(pcov.diagonal()[1:-cheb])
+
+-                                        
+
+-                                    #renormalise spectral parameters
+
+-                    final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
+
+-                                
+
+-                                #renormalise spectral parameters errors
+
+-                    efin=efin*(x_max-x_min)
+
+-                                                        
+
+-                    print("===== logg_loop",logg_loop,"===============================================")
+
+-                    print("BEST fit parameters =",final)
+
+-                    print("parameters ERROR =",efin)
+
+-                    print("======================================================")
+
+-
+
+-                    final_logg_collect.append(final)
+
+-                    efin_logg_collect.append(efin)
+
+-                    popt_logg_collect.append(popt)
+
+-                    pcov_logg_collect.append(pcov)
+
+-
+
+-                d_final_upper = final_logg_collect[2] - final_logg_collect[1]
+
+-                d_final_lower = final_logg_collect[1] - final_logg_collect[0]
+
+-                
+
+-                print("lower syst error", d_final_lower)
+
+-                print("upper syst error",d_final_upper)
+
+-                
+
+-                efin_upper =  (efin_logg_collect[2] ** 2 + d_final_upper ** 2)**0.5
+
+-                efin_lower = (efin_logg_collect[0] ** 2 + d_final_lower ** 2)**0.5
+
+-                
+
+-                final = final_logg_collect[1]
+
+-                popt = popt_logg_collect[1]
+
+-                pcov = pcov_logg_collect[1]
+
+-                
+
+-                
+
+-                
+
+-        # print(pcov[1][1]* (x_max[0]-x_min[0]) *1000)
+
+-        
+
+-        # pcorr = correlation_from_covariance(pcov)
+
+-        
+
+-        # print(pcorr)
+
+-        
+
+-        ### normalize the covariance matrix, how? 
+
+-
+
+-        print("BEST fit parameters =",final)
+
+-        print("parameters ERROR upper =",efin_upper)
+
+-        print("parameters ERROR lower =",efin_lower)
+
+-        
+
+-         #chi^2
+
+-        fit= restore1(wvl_obs_input,*popt)
+
+-        ch2=np.sum(((obs-fit)/usert)**2)/(len(obs)-len(popt))
+
+-             
+
+-        ch2_save = np.round(ch2,decimals=2)
+
+-         
+
+-        #make normalised and doppler shifted version for individual lines estimates
+
+-        if cheb > 0:
+
+-    
+
+-            cfc=popt[-cheb:]
+
+-            cfc[0]+=1
+
+-            cnt=np.dot(gks,cfc)
+
+-            
+
+-            fit/=cnt
+
+-            # obs/=cnt
+
+-        
+
+-        # fig_test = plt.figure()
+
+-        # ax_test = fig_test.add_subplot(111)
+
+-        
+
+-        # ax_test.plot(wvl_corrected,obs)
+
+-        # ax_test.plot(wvl_corrected,fit)
+
+-        
+
+-        # ax_test.set_xlim([min(wvl_corrected),min(wvl_corrected)+20])
+
+-        
+
+-        # plt.show()
+
+-        
+
+-        return [final,efin_upper,efin_lower,rv_shift,ch2_save,wvl_corrected,obs,fit,snr_star,wvl_obs_input,usert,pcov]
+
+-
+
+-def find_best_val_fix_all(ind_spec_arr): # used for creating error maps from reference values
+
+-
+
+-    spec_path = ind_spec_arr[0]
+
+-    
+
+-    labels_inp = ind_spec_arr[1]
+
+-    
+
+-    cont_norm_bool = ind_spec_arr[2]
+
+-    
+
+-    rv_shift_recalc = ind_spec_arr[3] # by this point it should have already been calculated
+
+-        
+
+-    rv_shift_err_recalc = ind_spec_arr[4]
+
+-    
+
+-    conv_instrument_bool = ind_spec_arr[5]
+
+-    
+
+-    input_spec_resolution = ind_spec_arr[6]
+
+-    
+
+-    if np.isnan(rv_shift_recalc) == True:
+
+-        
+
+-        rv_calc = True
+
+-        
+
+-    else:
+
+-        
+
+-        rv_calc = False
+
+-    
+
+-    ### rv correction calculation ###
+
+-    
+
+-    # wavelength,\
+
+-    # flux_norm,\
+
+-    # error_med,\
+
+-    # rv_shift,\
+
+-    # rv_shift_err,\
+
+-    # snr_star,\
+
+-    # flux_norm_sigma_ave,\
+
+-    # flux_sigma_ave = read_fits_GES_GIR_spectra(spec_path) 
+
+-    
+
+-    wavelength,\
+
+-    flux_norm,\
+
+-    error_med,\
+
+-    rv_shift,\
+
+-    rv_shift_err,\
+
+-    snr_star = read_txt_spectra(spec_path,rv_calc)
+
+-    
+
+-    # wavelength,\
+
+-    # flux_norm,\
+
+-    # error_med,\
+
+-    # rv_shift,\
+
+-    # rv_shift_err,\
+
+-    # snr_star = read_fits_spectra(spec_path)
+
+-
+
+-    if cont_norm_bool == True:
+
+-            
+
+-        flux_clipped = sigclip(flux_norm,sig=2.5)
+
+-        error_clipped = sigclip(error_med,sig=2.5)    
+
+-        
+
+-        ### before everything, continuum normalise
+
+-        
+
+-        geslines_synth_loaded = np.loadtxt("sapp_seg_v1_hr10.txt")
+
+-        
+
+-        spec_norm_results = continuum_normalise_spectra(wavelength = wavelength,\
+
+-                                    flux = flux_clipped,\
+
+-                                    error_flux = error_clipped,\
+
+-                                    SNR_star = snr_star,\
+
+-                                    continuum_buffer=0,
+
+-                                    secondary_continuum_buffer=2.5,
+
+-                                    geslines_synth=geslines_synth_loaded,\
+
+-                                    med_bool=True)
+
+-        
+
+-        wavelength_normalised_stitch = spec_norm_results[0]
+
+-        flux_normalised_stitch = spec_norm_results[1]
+
+-        error_flux_normalised_stitch = spec_norm_results[2]
+
+-        # continuum_stitch = spec_norm_results[3]
+
+-        # geslines_synth = spec_norm_results[4]    
+
+-        
+
+-        wvl = wavelength_normalised_stitch
+
+-        obs = flux_normalised_stitch
+
+-        usert = error_flux_normalised_stitch
+
+-    
+
+-    elif cont_norm_bool == False:
+
+-
+
+-        wvl = wavelength
+
+-        obs = flux_norm
+
+-        usert = error_med
+
+-        
+
+-    if conv_instrument_bool == True: # convolve observation spectra to lower resolution
+
+-        
+
+-        wvl,obs = convolve_python(wvl,obs,input_spec_resolution)
+
+-        # wvl,usert = convolve_python(usert,obs,input_spec_resolution)
+
+-            
+
+-        # overwrites the spectra with the convolved information 
+
+-
+
+-     
+
+-    
+
+-    wvl_corrected = RV_correction_vel_to_wvl_non_rel(wvl,rv_shift_recalc)
+
+-
+
+-#     print(f"RV correction = {rv_shift} km/s")
+
+-    
+
+-    wvl_to_cut = [] # this will stay empty if model isn't being cut
+
+-
+
+-    w0_new = w0
+
+-    
+
+-    # cutting for v1
+
+-        
+
+-    if min(wvl_corrected) > min(w0_new):
+
+-    
+
+-        # cut model to obs minimum
+
+-        
+
+-        wvl_min_bool = True # this will affect restore1
+
+-        
+
+-        w0_new = w0_new[w0_new >= min(wvl_corrected)]        
+
+-
+
+-        wvl_to_cut = wvl_corrected
+
+-        
+
+-    else:
+
+-        
+
+-        wvl_min_bool = False # this will not affect restore1
+
+-                
+
+-    if max(wvl_corrected) < max(w0_new): # basically your model should be cut like w0_new
+
+-    
+
+-        # cut model to obs minimum
+
+-        
+
+-        wvl_max_bool = True # this will affect restore1
+
+-
+
+-        w0_new = w0_new[w0_new <= max(wvl_corrected)]        
+
+-        
+
+-        wvl_to_cut = wvl_corrected
+
+-        
+
+-    else:
+
+-        
+
+-        wvl_max_bool = False # this will not affect restore1
+
+-
+
+-    # great, now obs is cut to model if it was bigger. If mod is bigger, then it'll pass on
+
+-
+
+-    wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,wvl_to_cut))
+
+-        
+
+-    obs = np.interp(w0_new,wvl_corrected,obs) # this will cut obs to model if model is smaller
+
+-    usert = np.interp(w0_new,wvl_corrected,usert)
+
+-    wvl_corrected = np.interp(w0_new,wvl_corrected,wvl_corrected)
+
+-        
+
+-    popt=[0]
+
+-    
+
+-    '''
+
+-    #masking=False
+
+-    #masking=True
+
+-    #set error_spectrum=1000 around masked lines
+
+-    if masking:
+
+-#        wav=wvl/(1+(rv+popt[0])/299792.458)
+
+-        #mask experiment
+
+-        windx=np.array([])
+
+-        for i in range(len(wgd)):
+
+-            windx=np.append(windx,np.where(abs(wav-wgd[i])<0.751)[0])
+
+-        windx=[int(it) for it in windx]
+
+-        windx=np.unique(windx)
+
+-        #print(len(windx))
+
+-        spix=wav<0
+
+-        spix[windx]=True
+
+-        usert[spix]=1000
+
+-    ''' 
+
+-    
+
+-    #some list
+
+-    set=[]#np.arange(5700)
+
+-    
+
+-    #flag for success
+
+-    suc=True
+
+-    #argiments for curve_fit
+
+-    kwargs={'loss':'linear',"max_nfev":1e8,'xtol':1e-4}
+
+-    
+
+-        
+
+-    try:
+
+-                init= np.zeros(num_labels+1+cheb)
+
+-                lb=init-0.51
+
+-                hb=init+0.51
+
+-                    
+
+-                fix=0#Teff index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=1#logg index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=2#feh index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=3#vmic index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=4#vbrd index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=5#mgfe index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=6#tife index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-
+
+-                fix=7#mnfe index
+
+-                init[fix+1]=(labels_inp[fix]-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+
+-                lb[fix+1]=init[fix+1]-1e-4
+
+-                hb[fix+1]=init[fix+1]+1e-4
+
+-    
+
+-                popt, pcov = curve_fit(restore1,wvl_obs_input,\
+
+-                   obs,\
+
+-                   p0 = init,\
+
+-                   #p0 = np.zeros(num_labels+1+cheb),\
+
+-                   sigma=usert,\
+
+-                   #sigma=obs*0+1,\
+
+-                   absolute_sigma=True,\
+
+-                   bounds=(lb,hb),**kwargs)
+
+-    
+
+-                suc=True
+
+-    except RuntimeError:
+
+-#                 print("Error - curve_fit failed 4:")
+
+-                popt=np.ones(num_labels+1+cheb)
+
+-                pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+
+-                popt*=np.nan
+
+-                suc=False
+
+-                            
+
+-                #only spectral parameters 
+
+-    if cheb == 0:
+
+-                labels_fit = popt[1:]
+
+-                    #error from curve_fit
+
+-                efin=np.sqrt(pcov.diagonal()[1:])
+
+-                    
+
+-    elif cheb >=1:
+
+-                    
+
+-                labels_fit = popt[1:-cheb]
+
+-                    #error from curve_fit
+
+-                efin=np.sqrt(pcov.diagonal()[1:-cheb])
+
+-                    
+
+-                #renormalise spectral parameters
+
+-    final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
+
+-            
+
+-            #renormalise spectral parameters errors
+
+-    efin=efin*(x_max-x_min)
+
+-            
+
+-    efin_upper=efin
+
+-    efin_lower=efin
+
+-    # print("Ref. Model parameters =",final)
+
+-    # print("parameters ERROR upper =",efin_upper)
+
+-    # print("parameters ERROR lower =",efin_lower)        
+
+-     
+
+-     #chi^2
+
+-    fit= restore1(wvl_obs_input,*popt)
+
+-    ch2=np.sum(((obs-fit)/usert)**2)/(len(obs)-len(popt))
+
+-    # print("chisq_red =",ch2)    
+
+-    
+
+-    
+
+-    #make normalised and doppler shifted version for individual lines estimates
+
+-    if cheb > 0:
+
+-
+
+-        cfc=popt[-cheb:]
+
+-        cfc[0]+=1
+
+-        cnt=np.dot(gks,cfc)
+
+-            
+
+-        fit/=cnt
+
+-#        obs/=cnt
+
+-            
+
+-    return [final,efin_upper,efin_lower,rv_shift,ch2,wvl_corrected,obs,fit,w0_new]
+
+-
+
+-def create_error_mask(spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution):
+
+-                    
+
+-    ### star_id_use plugs into PLATO_bmk_lit and PLATO_bmk_lit_other_params to grab literature values :) 
+
+-    
+
+-    star_plot_lit_values = PLATO_bmk_lit[error_mask_index] #name, teff, logg, feh (inc errors)
+
+-        
+
+-    # print(star_conv_list_HARPS[HARPS_loop_index],star_ids_bmk[star_id_use_HARPS])
+
+-    
+
+-    print(star_plot_lit_values)
+
+-    
+
+-    star_plot_temp = float(star_plot_lit_values[1])
+
+-    star_plot_logg = float(star_plot_lit_values[3])
+
+-    star_plot_feh = float(star_plot_lit_values[5])
+
+-        
+
+-    star_plot_other_lit_values = PLATO_bmk_lit_other_params[error_mask_index] #name, vmic, vsini, mgfe, tife, mnfe (inc errors)
+
+-        
+
+-    star_plot_vmic = float(star_plot_other_lit_values[1])
+
+-    star_plot_vsini = float(star_plot_other_lit_values[3])
+
+-    star_plot_mgfe = float(star_plot_other_lit_values[5])
+
+-    star_plot_tife = float(star_plot_other_lit_values[7])
+
+-    star_plot_mnfe = float(star_plot_other_lit_values[9])
+
+-        
+
+-    labels_inp_star_plot = np.array([star_plot_temp/1000,\
+
+-                              star_plot_logg,\
+
+-                              star_plot_feh,\
+
+-                              star_plot_vmic,\
+
+-                              star_plot_vsini,\
+
+-                              star_plot_mgfe,\
+
+-                              star_plot_tife,\
+
+-                              star_plot_mnfe])
+
+-            
+
+-    spec_results = find_best_val_fix_all([spec_path,labels_inp_star_plot,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution])
+
+-        
+
+-    # final,efin_upper,efin_lower,rv_shift,ch2,wvl_corrected,obs,fit
+
+-        
+
+-    wavelength = spec_results[5]
+
+-    observation = spec_results[6] # should be the same as obs
+
+-    model = spec_results[7]
+
+-    
+
+-    w0_new = spec_results[8]
+
+-    
+
+-    # check they are the same
+
+-    # print(len(wavelength),wavelength) 
+
+-    # print(len(w0_new),w0_new)
+
+-            
+
+-    residual = observation - model
+
+-
+
+-    spec_res_save = np.vstack((wavelength,abs(residual),residual)).T
+
+-    
+
+-    return spec_res_save
+
+-
+
+-def stitch_regions(path_list,import_path,filename,savebool):
+
+-    
+
+-    """stitches a set of spectra together ordered by a list"""
+
+-            
+
+-    wavelength_stitch,flux_stitch = load_TS_spec(import_path + path_list[0])
+
+-    
+
+-    # need to check if the beginning and end of each section are the same!
+
+-    
+
+-    stitch_edge_value = max(wavelength_stitch)
+
+-        
+
+-    for stitch_index in range(1,len(path_list)):
+
+-                
+
+-        wavelength_stitch_dummy, flux_stitch_dummy = load_TS_spec(import_path + path_list[stitch_index])
+
+-        
+
+-        min_wavelength = min(wavelength_stitch_dummy)
+
+-        
+
+-        if min_wavelength == stitch_edge_value: # i.e. the first wavelength of the current region is the same as the last wavelength of the previous region
+
+-
+
+-            flux_stitch_dummy = flux_stitch_dummy[:len(flux_stitch_dummy)-1] # i.e. the last wavelength is removed                        
+
+-            
+
+-            wavelength_stitch = wavelength_stitch[:len(wavelength_stitch)-1] # i.e. the last wavelength is removed                        
+
+-            
+
+-        wavelength_stitch = np.hstack((wavelength_stitch,wavelength_stitch_dummy))
+
+-        flux_stitch = np.hstack((flux_stitch,flux_stitch_dummy))
+
+-        
+
+-        stitch_edge_value = max(wavelength_stitch)
+
+-        
+
+-    if savebool == True:
+
+-        
+
+-        np.savetxt(f"{filename}" + ".txt",np.vstack((wavelength_stitch,flux_stitch)).T,header=' Wavelength/AA \t Flux')
+
+-    
+
+-    return wavelength_stitch,flux_stitch
+
+-
+
+-def error_mask_trim_process(residual_error_map,wvl_corrected,obs):
+
+-    
+
+-    wvl_err_mask = residual_error_map[:,0]
+
+-    err_mask = residual_error_map[:,1]
+
+-
+
+-    # print("wvl emask ",wvl_err_mask)
+
+-    # print("wvl obs ",wvl_corrected)
+
+-
+
+-    # plt.plot(wvl_err_mask,err_mask,'g-',label='emask')
+
+-
+
+-    # if error_mask_recreate_bool == False:
+
+-
+
+-        ### interpolate the error mask onto the stellar wavelength scale
+
+-        
+
+-        # err_mask_interp = sci.UnivariateSpline(wvl_err_mask,err_mask,k=5)
+
+-        
+
+-        # err_mask = err_mask_interp(wvl_corrected)
+
+-        # wvl_err_mask = wvl_corrected
+
+-        
+
+-    # print("wvl_emask",wvl_err_mask)
+
+-    # print("emask",err_mask)
+
+-    
+
+-    # print("================================")
+
+-
+
+-    # print("wvl_emask_new",wvl_corrected)
+
+-    # print("emask_new",err_mask_new)
+
+-    
+
+-    # plt.plot(wvl_corrected,obs,'b-',label='obs')
+
+-    # plt.plot(wvl_err_mask,err_mask,'r-',label='emask interp')
+
+-        
+
+-    # plt.legend(loc='upper right')
+
+-    # plt.show()
+
+-    
+
+-                        
+
+-    ### DEALLING WITH MINIMA ###
+
+-
+
+-    # plt.plot(wvl_err_mask,err_mask,'b-',label='emask')            
+
+-
+
+-    if min(wvl_err_mask) < min(wvl_corrected):
+
+-        # cut the error mask down to shape
+
+-        
+
+-        # print("wvl_err_mask",wvl_err_mask,len(wvl_err_mask))
+
+-        # print("wvl_corrected",wvl_corrected,len(wvl_corrected))
+
+-        
+
+-        err_mask = err_mask[wvl_err_mask >= min(wvl_corrected)]
+
+-        wvl_err_mask = wvl_err_mask[wvl_err_mask >= min(wvl_corrected)]
+
+-        
+
+-    elif min(wvl_err_mask) > min(wvl_corrected):
+
+-        
+
+-        # print("----------------------------------")
+
+-        # print(wvl_corrected,len(wvl_corrected),len(obs))
+
+-        # print(wvl_err_mask,len(wvl_err_mask),len(err_mask))
+
+-        
+
+-        
+
+-
+
+-        # print(wvl_err_mask[:20],len(wvl_err_mask))
+
+-        # print(err_mask[:20],len(err_mask))
+
+-
+
+-        # print("wow")
+
+-
+
+-        
+
+-        # print(len(wvl_err_mask),len(err_mask))
+
+-        
+
+-        # little more tricky, cannot create data nor cut the observed spec down
+
+-        # solution, pad with zeroes, it will not effect the overall error
+
+-        
+
+-        wvl_obs_min = min(wvl_corrected)
+
+-        delta_obs = wvl_corrected[1] - wvl_corrected[0] # should be the same for all
+
+-        
+
+-        wvl_errmask_min = min(wvl_err_mask)
+
+-        delta_errmask = wvl_err_mask[1] - wvl_err_mask[0] # should be the same for all
+
+-                        
+
+-        # the difference in wavelength between minima
+
+-        
+
+-        wvl_range =  wvl_errmask_min - wvl_obs_min
+
+-        
+
+-        # print(wvl_range,wvl_errmask_min, wvl_obs_min)
+
+-        
+
+-        # the number of zeros we have to attach to the err mask y array
+
+-        
+
+-        # N_zeros = int(np.round(wvl_range/delta_errmask)) # this is assuming that del err mask is same as del obs
+
+-        # N_zeros = int(np.round(wvl_range/delta_obs)) # this is assuming that del err mask is same as del obs
+
+-                                    
+
+-        # print(N_zeros)
+
+-        
+
+-        # print(wvl_err_mask[:6],len(wvl_err_mask))
+
+-        # print(err_mask[:6],len(err_mask))
+
+-        # print(int(np.round(wvl_range/delta_obs)),int(np.round(wvl_range/delta_errmask)))
+
+-        
+
+-        # create array to tac on to the original
+
+-        
+
+-        # wvl_tac = np.arange(wvl_obs_min,wvl_errmask_min,delta_errmask)
+
+-        wvl_tac = np.arange(wvl_obs_min,wvl_errmask_min-delta_obs,delta_obs)
+
+-        
+
+-        if len(wvl_tac) == 0:
+
+-         
+
+-            # if the difference between emask and obs is the same as delta_obs itself
+
+-            # then tac on wvl_obs_min itself
+
+-         
+
+-            # i.e. wvl_errmask_min-delta_obs <= wvl_obs_min
+
+-            
+
+-            wvl_tac = np.arange(wvl_obs_min,wvl_errmask_min,delta_obs)
+
+-
+
+-        # wvl_tac = np.arange(wvl_errmask_min,wvl_obs_min-delta_obs,delta_obs)
+
+-
+
+-        N_zeros = len(wvl_tac)
+
+-                                    
+
+-        errmask_tac = np.zeros([N_zeros])
+
+-        
+
+-        wvl_err_mask = np.hstack((wvl_tac,wvl_err_mask))
+
+-        
+
+-        err_mask = np.hstack((errmask_tac,err_mask))
+
+-        
+
+-        # print(wvl_obs_min,wvl_errmask_min-delta_obs,delta_obs)
+
+-        # print(wvl_err_mask)
+
+-        # print(wvl_corrected)        
+
+-
+
+-
+
+-    ### DEALING WITH MAXIMA ###
+
+-    
+
+-    if max(wvl_err_mask) > max(wvl_corrected):
+
+-        
+
+-        # cut the error mask down to shape, simple
+
+-        
+
+-        # print(len(wvl_err_mask),len(err_mask))
+
+-        
+
+-        err_mask  = err_mask [wvl_err_mask  <= max(wvl_corrected)]
+
+-        wvl_err_mask  = wvl_err_mask [wvl_err_mask  <= max(wvl_corrected)]
+
+-        
+
+-    elif max(wvl_err_mask ) < max(wvl_corrected):
+
+-        
+
+-        
+
+-        # print(wvl_corrected,len(wvl_corrected),len(obs))
+
+-        # print(wvl_err_mask,len(wvl_err_mask),len(err_mask))
+
+-        
+
+-        # you need to pad with some zeroes
+
+-        
+
+-        wvl_obs_max = max(wvl_corrected)
+
+-        delta_obs = wvl_corrected[1] - wvl_corrected[0] # should be the same for all
+
+-        
+
+-        wvl_errmask_max = max(wvl_err_mask)
+
+-        delta_errmask = wvl_err_mask[1] - wvl_err_mask[0] # should be the same for all
+
+-        
+
+-        wvl_range =  wvl_obs_max - wvl_errmask_max
+
+-        
+
+-        # N_zeros = int(np.round(wvl_range/delta_errmask)) # this is assuming that del err mask is same as del obs
+
+-        
+
+-        wvl_tac = np.arange(wvl_errmask_max+delta_errmask,wvl_obs_max+delta_errmask,delta_errmask)
+
+-        
+
+-        # if len(wvl_tac) == 0:
+
+-        
+
+-        # print("-------")
+
+-        # print(wvl_err_mask)
+
+-        # print(wvl_tac)
+
+-        # print(wvl_corrected)
+
+-        
+
+-        
+
+-        N_zeros = len(wvl_tac)
+
+-            
+
+-        errmask_tac = np.zeros([N_zeros])
+
+-
+
+-        wvl_err_mask = np.hstack((wvl_err_mask ,wvl_tac))
+
+-        
+
+-        err_mask = np.hstack((err_mask,errmask_tac))
+
+-        
+
+-    
+
+-    # print("wvl emask ",wvl_err_mask)
+
+-    # print("wvl obs ",wvl_corrected)
+
+-    
+
+-    # print(wvl_err_mask[:20],len(wvl_err_mask))
+
+-    # print(err_mask[:20],len(err_mask))
+
+-    
+
+-    ### now interpolate emask over to same wavelength scale as obs
+
+-    
+
+-    # if error_mask_recreate_bool == False:
+
+-    
+
+-    # print("---------------------------------")
+
+-    # print(wvl_corrected)
+
+-    # print(wvl_err_mask)
+
+-                
+
+-    emask_func = sci.interp1d(wvl_err_mask,err_mask)
+
+-    err_mask = emask_func(wvl_corrected)
+
+-    wvl_err_mask = wvl_corrected
+
+-            
+
+-    return wvl_err_mask,err_mask
+
+-
+
+-
+
+-Input_data_path_main = "../../../Input_data/"
+
+-
+
+-### required for single use of this script or spectroscopic_Lhood_grid_2
+
+-
+
+-# Input_data_path_main = "../Input_data/"
+
+-
+
+-Input_data_path = Input_data_path_main
+
+-
+
+-PLATO_bmk_lit = np.loadtxt(Input_data_path + "Reference_data/PLATO_stars_lit_params.txt",dtype=str,delimiter=',')
+
+-star_ids_bmk = PLATO_bmk_lit[:,0]
+
+-PLATO_bmk_lit_other_params = np.loadtxt(Input_data_path + "Reference_data/PLATO_stars_lit_other_params.txt",dtype=str,delimiter=',')
+
+-
+
+-solar_model_list = np.loadtxt(Input_data_path + "spectroscopy_model_data/Sun_model_segments.txt",dtype=str)
+
+-wvl_solar_model, flux_solar_model = stitch_regions(solar_model_list,Input_data_path + "spectroscopy_model_data/Sun_model_R5e5_TS_hr10/","solar_model_stitched_hr10",savebool=False)
+
+-
+
+-#name="NN_results_RrelsigL20.npz"#LTE
+
+-name="NN_results_RrelsigN20.npz"#NLTE
+
+-
+
+-LTE_type = "NLTE"
+
+-#LTE_type = "LTE"
+
+-
+
+-#import_path = "Payne/"
+
+-# import_path = "../"
+
+-#
+
+-
+
+-import_path = Input_data_path + "spectroscopy_model_data/Payne_input_data/"
+
+-
+
+-temp=np.load(import_path+name)
+
++def find_best_val(ind_spec):
+
++	#print stars[ind_spec],snr[:,ind_spec]
+
++	remark=""
+
++	with h5py.File(hdfile, "r") as hdf5:
+
++		#flux
+
++		obs = hdf5["spectrum"][ind_spec]
+
++		#median value
+
++		med=np.median(obs)
+
++		obs/=med
+
++		#flux error
+
++		usert = hdf5["error_spectrum"][ind_spec]/med
+
++		
+
++	#problematic region with reduction problem in hr10
+
++	usert[4858:4868]=1000
+
++	rv=rvs[ind_spec]
+
++	'''
+
++	#apogee normalisation
+
++	cn=fit_aspcap(wvl,obs.copy(),usert,3,5,3,0.3)
+
++	obs/=cn
+
++	usert/=cn
+
++	'''
+
++	popt=[0]
+
++	#masking=False
+
++	#masking=True
+
++	#set error_spectrum=1000 around masked lines
+
++	if masking:
+
++		wav=wvl/(1+(rv+popt[0])/299792.458)
+
++		#mask experiment
+
++		windx=np.array([])
+
++		for i in range(len(wgd)):
+
++			windx=np.append(windx,np.where(abs(wav-wgd[i])<0.751)[0])
+
++		windx=[int(it) for it in windx]
+
++		windx=np.unique(windx)
+
++		#print(len(windx))
+
++		spix=wav<0
+
++		spix[windx]=True
+
++		usert[spix]=1000
+
++
+
++	#some list
+
++	set=[]#np.arange(5700)
+
++	
+
++	#flag for success
+
++	suc=True
+
++	#argiments for curve_fit
+
++	kwargs={'loss':'linear',"max_nfev":1e8,'xtol':1e-4}
+
++
+
++	try:
+
++		popt, pcov = curve_fit(restore1,rv,\
+
++				   obs,\
+
++				   p0 = np.zeros(num_labels+1+cheb),\
+
++				   sigma=usert,\
+
++				   absolute_sigma=True,\
+
++				   bounds=(-.59,.59),**kwargs)
+
++		suc=True
+
++	except RuntimeError:
+
++		print("Error - curve_fit failed 4:"+str(ind_spec))#stars[ind_spec])
+
++		popt=np.ones(num_labels+1+cheb)
+
++		pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+
++		popt*=np.nan
+
++		suc=False
+
++
+
++	#only spectral parameters 
+
++	labels_fit = popt[1:-cheb]
+
++	#renormalise spectral parameters
+
++	final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
+
++	print(str(ind_spec)+" "+stars[ind_spec]+np.array_str(final, precision=3)+" SNR="+str(snr[ind_spec])+" RV="+str(rv+popt[0]))
+
++	#error from curve_fit
+
++	efin=np.sqrt(pcov.diagonal()[1:-cheb])
+
++	#renormalise spectral parameters errors
+
++	efin=efin*(x_max-x_min)
+
++	
+
++	#final=np.append(final,efin)
+
++	
+
++	#collect all to output
+
++	#final=np.append(final,efin)
+
++	#spectral parameters, errors, RV, error RV, SNR
+
++	#final=np.append(final,np.array([rv+6*popt[0],6*np.sqrt(pcov.diagonal()[0]),snr[ind_spec]]))
+
++
+
++	#observed wavelength shifted to rest frame
+
++	wavel=wvl/(1+(rv+6*popt[0])/299792.458)
+
++
+
++	
+
++	#chi^2
+
++	fit= restore1(rv,*popt)
+
++	ch2=np.sum(((obs-fit)/usert)**2)/(len(obs)-len(popt))
+
++	
+
++	#make normalised and doppler shifted version for individual lines estimates
+
++	cfc=popt[-cheb:]
+
++	cfc[0]+=1
+
++	cnt=np.dot(gks,cfc)
+
++	obs1=obs.copy()
+
++	usert1=usert.copy()
+
++	obsRV=obs1/cnt
+
++	usert1=usert1/cnt
+
++	obs1=np.interp(w0,wavel,obsRV)
+
++	usert1=np.interp(w0,wavel,usert1)
+
++	fit/=cnt
+
++	#set high error at edges with no data
+
++	edges=(w0<wavel[0])+(w0>wavel[-1])
+
++	
+
++	usert1[edges]=1000
+
++	
+
++	final=np.append(final,np.append(obs1,usert1))
+
++	
+
++	if savetxt:
+
++		#save fitted and observed spectrum 
+
++		one=np.row_stack((wavel,obsRV,fit))#
+
++		np.savetxt(stars[ind_spec]+'.txt',one.T,fmt=('%12.7f','%12.7f','%12.7f'))
+
++		
+
++	
+
++	wavel=w0
+
++	#list to collect estimates from lines
+
++	flg=[]
+
++	#for Mg lines
+
++	for mg in mg_lines:
+
++		#spectral window
+
++		ss=abs(wavel-mg)<0.51
+
++		set=np.arange(5700)[ss]
+
++		sig=usert1[set]
+
++		
+
++		ele=5#Mg/Fe index in payne model
+
++
+
++		popti, pcov1 = curve_fit(restone,[set,popt[1:-cheb],ele],\
+
++				   obs1[set],\
+
++				   p0 = np.zeros(2),\
+
++				   sigma=sig,\
+
++				   absolute_sigma=True,\
+
++				   bounds=(-0.6,0.6),**kwargs)
+
++
+
++		finti = (popti[0] + 0.5)*(x_max[ele]-x_min[ele]) + x_min[ele]
+
++		flg.append(finti)#value
+
++		errti=np.sqrt(pcov1.diagonal()[0])*(x_max[ele]-x_min[ele])
+
++		flg.append(errti)#error
+
++		#make plot of the fit
+
++		if sgrf:
+
++			fiti=restone([set,popt[1:-cheb],ele],*popti)
+
++			plt.clf()
+
++			plt.title(stars[ind_spec]+" Mg "+str(mg)+"\n full spec.=%.2f %.2f, single line=%.2f %.2f"%((final[5],final[-5],finti,errti)))
+
++			plt.plot(wavel[set],fiti,label="fit")
+
++			plt.plot(wavel[set],sig,label="mask")
+
++			plt.errorbar(wavel[set],obs1[set],xerr=0.03,yerr=usert1[set],color="k",fmt="none",label="obs")
+
++			plt.xlim(mg-.9,mg+.9)
+
++			plt.ylim(.25,1.1)
+
++			plt.legend(fontsize=12, loc="lower left",
+
++				mode="expand", borderaxespad=0, ncol=4)
+
++			plt.savefig(stars[ind_spec]+str(mg)+".png",dpi=100)
+
++	#Ti
+
++	for mg in ti_lines:#
+
++		ss=abs(wavel-mg)<0.51
+
++		set=np.arange(5700)[ss]
+
++		sig=usert1[set]
+
++		
+
++		ele=6
+
++		
+
++		popti, pcov1 = curve_fit(restone,[set,popt[1:-cheb],ele],\
+
++				   obs1[set],\
+
++				   p0 = np.zeros(2),\
+
++				   sigma=sig,\
+
++				   absolute_sigma=True,\
+
++				   bounds=(-0.6,0.6),**kwargs)
+
++
+
++		finti = (popti[0] + 0.5)*(x_max[ele]-x_min[ele]) + x_min[ele]
+
++		flg.append(finti)
+
++		errti=np.sqrt(pcov1.diagonal()[0])*(x_max[ele]-x_min[ele])
+
++		flg.append(errti)
+
++		if sgrf:
+
++			fiti=restone([set,popt[1:-cheb],ele],*popti)
+
++			errti=np.sqrt(pcov1.diagonal()[0])*(x_max[ele]-x_min[ele])
+
++			plt.clf()
+
++			plt.title(stars[ind_spec]+" Ti "+str(mg)+"\n full spec.=%.2f %.2f, single line=%.2f %.2f"%((final[6],final[-4],finti,errti)))
+
++			plt.plot(wavel[set],fiti,label="fit")
+
++			plt.plot(wavel[set],sig,label="mask")
+
++			plt.errorbar(wavel[set],obs1[set],xerr=0.03,yerr=usert1[set],color="k",fmt="none",label="obs")
+
++			plt.xlim(mg-.9,mg+.9)
+
++			plt.ylim(.25,1.1)
+
++			plt.legend(fontsize=12, loc="lower left",
+
++				mode="expand", borderaxespad=0, ncol=4)
+
++			plt.savefig(stars[ind_spec]+str(mg)+".png",dpi=100)
+
++
+
++
+
++
+
++	return np.append(final,np.array(flg))
+
++	
+
++#a=b
+
++
+
++
+
++name="NN_results_RrelsigL20.npz"#LTE
+
++#name="NN_results_RrelsigN20.npz"#NLTE
+
++
+
++temp=np.load(name)
+
+ 
+
+ w_array_0 = temp["w_array_0"]
+
+ w_array_1 = temp["w_array_1"]
+
+@@ -2277,248 +331,123 @@
+
+ w0=w0[::2]
+
+ 
+
+ 
+
+-#define array with polynomials for normalisation
+
+-#order of Chebyshev polynomials
+
+-cheb=0
+
+-
+
+-gks=[]
+
+-for i in range(cheb):
+
+-    gks.append(np.polynomial.Chebyshev.basis(i,domain=[0,len(w0)-1])(np.arange(len(w0))))
+
+-gks=np.array(gks)
+
+-gks=gks.T
+
+-
+
+-### MASKING ### 
+
+- 
+
++
+
++#file with observations
+
++#testDR3public3rest.hdf5 testDR3public2.hdf5
+
++#hdfile="testDR3public3rest.hdf5"
+
++#hdfile="testDR3public3rest1.hdf5"#not normalised 
+
++hdfile="idr6hr10all.h5"
+
++
+
++
+
++
+
++#file with names snr, rv from crossvalidation non 
+
++#names are in python 2.7 string format !!!!! will not work with python 3
+
++fn="test-idr6all1norm.npz"
+
++temp=np.load(fn)
+
++stars=temp["stars"]
+
++#to run with python3
+
++stars=np.array([it.decode("utf8") for it in stars ])
+
++snr=temp["snr"][0]#[:1422]
+
++labels=temp["labels"][:,:4]
+
++rvs=temp['rvs'][0]
+
++wvl=temp["w_lam"]
+
++
+
++'''
+
++for i,name in enumerate(stars):
+
++	print(i,name) 
+
++'''
+
++
+
++#fit abundances from individual lines in 0.55 A window around
+
++#set lists #
+
++mg_lines=[]#5528.41]
+
++ti_lines=[]#5381.02,5384.63,5418.76]#,5426.25,5471.19,5490.14,5490.85,5514.53]
+
++#plot individual profile fits
+
++sgrf=False#
+
++#sgrf=True
+
++
+
++#save txtfile with full spectrum fit  
+
++savetxt=False
+
++#savetxt=True
+
+ #to mask smth
+
+ masking=False
+
+ #lines to be masked in interval 0.751 around them
+
+-wgd=np.array([5503.08,5577.34]) # bad lines aparently 
+
+-
+
+-### GAIA ESO IDR6 Mikhail files ###
+
+-'''
+
+-# hdfile="../../idr6hr10all.h5"
+
+-hdfile_ges_idr6= import_path + "idr6hr10all.h5"
+
+-# hdfile = hdfile
+
+-#file with names snr, rv from crossvalidation non 
+
+-#names are in python 2.7 string format !!!!! will not work with python 3
+
+-# fn="../../test-idr6all1norm.npz"
+
+-fn_ges_idr6= import_path + "test-idr6all1norm.npz"
+
+-temp=np.load(fn_ges_idr6)
+
+-stars_ges_idr6=temp["stars"]
+
+-#to run with python3
+
+-stars_ges_idr6=np.array([it.decode("utf8") for it in stars_ges_idr6 ])
+
+-snr_ges_idr6=temp["snr"][0]#[:1422]
+
+-labels_ges_idr6=temp["labels"][:,:4]
+
+-rvs_ges_idr6=temp['rvs'][0]
+
+-wvl_ges_idr6=temp["w_lam"] # this is the obs scale for all of the stars
+
+-'''
+
+-
+
+-### Spectra example ###
+
+-
+
+-# spec_list_GES = [[PLATO_bmk_lit[0],Input_data_path + "spectroscopy_observation_data/Sun/gar_ssssssss-sssssss_H548.8_106.fit"],
+
+-#                  [PLATO_bmk_lit[10],"../../Input_data/spectroscopy_observation_data/18_sco/gir_16153746-0822162_H548.8_1.fit"]]
+
+-
+
+-# spec_list_HARPS_raw = [[PLATO_bmk_lit[0],Input_data_path + "spectroscopy_observation_data/Sun/gar_ssssssss-sssssss_H548.8_106.fit"],
+
+-#                  [PLATO_bmk_lit[10],"../../Input_data/spectroscopy_observation_data/18_sco/gir_16153746-0822162_H548.8_1.fit"]]
+
+-
+
+-# spec_list_HARPS_processed = [[PLATO_bmk_lit[0],Input_data_path + "spectroscopy_observation_data/Sun/gar_ssssssss-sssssss_H548.8_106.fit"],
+
+-#                  [PLATO_bmk_lit[10],Input_data_path + "spectroscopy_observation_data/18_sco/gir_16153746-0822162_H548.8_1.fit"]]
+
+-
+
+-# spec_path = Input_data_path + "spectroscopy_observation_data/Sun/gar_ssssssss-sssssss_H548.8_106.fit"
+
+-# error_map_spec_path = Input_data_path + "spectroscopy_observation_data/Sun/gar_ssssssss-sssssss_H548.8_106.fit"
+
+-# error_mask_index = 10 # this refers to the 10th index of the PLATO_bmk_lit variable, the SUN
+
+-
+
+-#### ALL results below are using the error mask
+
+-
+
+-### Gaia ESO 18sco spectra, semi-normalised, no convolution needed
+
+-
+
+-# spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/gir_16153746-0822162_H548.8_1.fit"
+
+-# error_map_spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/gir_16153746-0822162_H548.8_1.fit"
+
+-# error_mask_index = 0 # this refers to the 10th index of the PLATO_bmk_lit variable, the SUN
+
+-
+
+-## cont norm, [ 5.78031  4.36011  0.01115  1.10395  7.25362 -0.02073 -0.00034 -0.04597]
+
+-
+
+-## just e-mask, [ 5.78625  4.41237 -0.10488  1.29765  6.03221 -0.03578  0.02457 -0.03138]
+
+-
+
+-### HARPS 18sco spectra, not normalised or convolved, raw effectively.
+
+-
+
+-## [ 5.77288  4.36684  0.02831  1.02505  4.12243  0.01891  0.00488 -0.03123] 18000
+
+-
+
+-## [ 5.78097  4.38926  0.01845  1.18332  4.12242  0.01196  0.00839 -0.02321] 21000
+
+-
+
+-# spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g.fits'
+
+-# error_map_spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g.fits'
+
+-# error_mask_index = 0
+
+-
+
+-### HARPS 18sco spectra, normalised and convolved already (pre-process)
+
+-
+
+-## [ 5.77216  4.37047  0.02535  1.04010  4.12242  0.02084  0.00929 -0.03453]
+
+-
+
+-''
+
+-# spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path =  "18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path =  "HD49933/ADP_hd49933_snr287_HARPS_29.577g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "HD49933/ADP_hd49933_snr287_HARPS_29.577g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-###############################3
+
+-
+
+-### SUN ###
+
+-
+
+-# spec_path =  "emask_input_spectra/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path =  "emask_input_spectra/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-spec_path =  "emask_input_spectra/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-error_map_spec_path = "emask_input_spectra/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path =  "emask_input_spectra/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "emask_input_spectra/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-error_mask_index = 9
+
+-star_index = 9
+
+-stellar_filename = "sun"
+
+-
+
+-
+
+-### Procyon ###
+
+-
+
+-# spec_path = "emask_input_spectra/Procyon/ADP_procyon_snr493_UVES_21.007g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/Procyon/ADP_procyon_snr493_UVES_21.007g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path = "emask_input_spectra/Procyon/ADP_procyon_snr544_UVES_21.033g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/Procyon/ADP_procyon_snr544_UVES_21.033g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path = "emask_input_spectra/Procyon/ADP_procyon_snr549_UVES_48.418g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/Procyon/ADP_procyon_snr549_UVES_48.418g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path = "emask_input_spectra/Procyon/HARPS_Procyon_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/Procyon/HARPS_Procyon_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path = "emask_input_spectra/Procyon/UVES_Procyon_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "emask_input_spectra/Procyon/UVES_Procyon_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# error_mask_index = 8
+
+-# star_index = 8
+
+-# stellar_filename = "Procyon"
+
+-
+
+-### delta eri ###
+
+-
+
+-# spec_path =  "emask_input_spectra/deleri/ADP_deleri_snr246_UVES_52.774g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "emask_input_spectra/deleri/ADP_deleri_snr246_UVES_52.774g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path =  "emask_input_spectra/deleri/ADP_deleri_snr262_UVES_52.794g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "emask_input_spectra/deleri/ADP_deleri_snr262_UVES_52.794g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-
+
+-# spec_path =  "emask_input_spectra/deleri/UVES_delEri_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "emask_input_spectra/deleri/UVES_delEri_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_mask_index = 5
+
+-# star_index = 5
+
+-# stellar_filename = "deleri"
+
+-
+
+-###############################3
+
+-
+
+-# spec_path = "sun/Vesta.dop_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "sun/Vesta.dop_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_mask_index = 9
+
+-# star_index = 9
+
+-# stellar_filename = "sun"
+
+-
+
+-
+
+-# spec_path = "betvir/ADP_betvir_snr283_HARPS_03.757gm_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path = "betvir/ADP_betvir_snr283_HARPS_03.757gm_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_mask_index = 4
+
+-# star_index = 4
+
+-# stellar_filename = "betvir"
+
+-
+
+-
+
+-## low temp test
+
+-
+
+-# spec_path =  "alfcenB/HARPS_alfCenB_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "alfcenB/HARPS_alfCenB_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_mask_index = 2
+
+-# star_index = 2
+
+-# stellar_filename = "alfcenB"
+
+-
+
+-## medium temp test
+
+-
+
+-# spec_path =  "bethyi/ADP_bethyi_snr307_UVES_31.935g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "bethyi/ADP_bethyi_snr307_UVES_31.935g_error_synth_flag_False_cont_norm_convolved_hr10_.txt"
+
+-# error_mask_index = 3
+
+-# star_index = 3
+
+-# stellar_filename = "bethyi"
+
+-
+
+-## high temp test
+
+-
+
+-# spec_path =  "HD49933/ADP_hd49933_snr280_HARPS_06.907ge_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_map_spec_path =  "HD49933/ADP_hd49933_snr280_HARPS_06.907ge_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
+-# error_mask_index = 7
+
+-# star_index = 7
+
+-# stellar_filename = "HD49933"
+
+-
+
+-
+
+-# star_index = 9
+
+-
+
+-
+
+-# error_mask_index = 0
+
+-# stellar_filename = "18sco"
+
+-
+
+-PLATO_stars_seism = np.loadtxt("../../../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/PLATO_stars_seism.txt",dtype=str,delimiter=",")
+
+-
+
+-error_mask_recreate_bool = False
+
+-error_map_use_bool = False
+
+-cont_norm_bool = False
+
+-rv_shift_recalc = [False,-100,100,0.05]
+
+-conv_instrument_bool = False
+
+-input_spec_resolution = 20000
+
+-numax_iter_bool = False
+
+-niter_numax_MAX = 5
+
+-numax_input_arr = [float(PLATO_stars_seism[star_index][1]),float(PLATO_stars_seism[star_index][2]),niter_numax_MAX]
+
+-recalc_metals_bool = False
+
+-feh_recalc_fix_bool = False
+
+-recalc_metals_inp = [5770,4.44,0,feh_recalc_fix_bool] 
+
+-logg_fix_bool = False
+
+-logg_fix_load = np.loadtxt(f"../../../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/seismology_lhood_results/{stellar_filename}_seismic_logg.txt",dtype=str)
+
+-logg_fix_input_arr = [float(logg_fix_load[1]),float(logg_fix_load[2]),float(logg_fix_load[3])]
+
+-
+
+-ind_spec_arr = [spec_path,\
+
+-                error_map_spec_path,\
+
+-                error_mask_index,\
+
+-                error_mask_recreate_bool,\
+
+-                error_map_use_bool,\
+
+-                cont_norm_bool,\
+
+-                rv_shift_recalc,\
+
+-                conv_instrument_bool,\
+
+-                input_spec_resolution,\
+
+-                numax_iter_bool,\
+
+-                numax_input_arr,\
+
+-                recalc_metals_bool,\
+
+-                recalc_metals_inp,\
+
+-                logg_fix_bool,\
+
+-                logg_fix_input_arr]
+
++wgd=np.array([5503.08,5577.34])
+
++
+
++#test only one star
+
++#find_best_val(114)#Mellote71 this star is too hot for our model grid or high rotator
+
+ 
+
+ import time 
+
+ 
+
+ start_time = time.time()
+
+-    
+
+-find_best_val(ind_spec_arr)
+
+-
+
+-print("time elapsed: ----",time.time()-start_time,"---- seconds ----")
+
+-''
+
+-
+
+-
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
+
+-    
++
+
++result=find_best_val(614)#NGC3532
+
++
+
++print("time elapsed ---" ,time.time()-start_time,"--- seconds")
+
++
+
++
+
++params=result[:num_labels]
+
++obs_norm=result[num_labels:-len(w0)]
+
++err_norm=result[-len(w0):]
+
++
+
++#params in human format Teff,logg,FeH,vmic,vbrd,MgFe,TiFe,MnFe
+
++print("Teff,logg,..=",params)
+
++
+
++#make new input for restore
+
++#normalisation
+
++params_norm=(params-x_min)/(x_max-x_min)-0.5
+
++#params in Payne format
+
++print("Payne=",params_norm)
+
++
+
++#make model spectrum
+
++model=restore([],*params_norm) 
+
++#make model spectrum at zero Payne parameters 
+
++model_zero=restore([],*np.zeros(num_labels)) 
+
++
+
++ch2=np.sum(((obs_norm-model)/err_norm)**2)/(len(obs_norm)-len(params_norm))
+
++
+
++ch2_0=np.sum(((obs_norm-model_zero)/err_norm)**2)/(len(obs_norm)-len(params_norm))
+
++
+
++print("Chi^2 for fit",ch2)
+
++print("Chi^2 for model_zero",ch2_0)
+
++
+
++#plot result of normalisation and Doppler shift
+
++plt.plot(w0,obs_norm,label="obs")
+
++plt.plot(w0,err_norm,label="error")
+
++plt.plot(w0,model,"r-",label="model")
+
++plt.plot(w0,model_zero,"g-",label="model_0")
+
++
+
++plt.legend()
+
++
+
++
+
++plt.ylim(-0.1,1.1)
+
++plt.show()
+
++
+
++
+
++
+
++# #this will stop the script at this point with Name error
+
++# a=b
+
++
+
++# #will run all set
+
++# run=range(len(stars))
+
++# #run only 20 Corot stars
+
++# run=range(57600,57620)
+
++
+
++# '''
+
++# for i in run:
+
++# 	print(i,stars[i],labels[i],rvs[i]) 
+
++# #a=b
+
++# '''
+
++# #multithread processing
+
++
+
++# num_processor=2
+
++# p = Pool(num_processor)
+
++# import time
+
++# start_time=time.time()
+
++# best_param_array = np.array(p.map(find_best_val,run)) #\Y_u_test.shape[1]
+
++# p.terminate()
+
++# print ("Elapsed time:", time.time()-start_time, 's, to  fit:'+str(len(run)))
+
++
+
++# allres=best_param_array.T
+
++
+
++# np.save("all4ebLRS0idr6test.npy",allres)
+
++
+
