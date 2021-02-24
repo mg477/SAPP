@@ -359,7 +359,7 @@ def main_func_multi_obs(inp_index_arr):
         spec_init_run = [[spec_path,\
                     error_map_spec_path,\
                     error_mask_index,\
-                    error_mask_recreate_bool,\
+                    error_mask_recreate_arr,\
                     error_map_use_bool,\
                     cont_norm_bool,\
                     rv_shift_recalc,\
@@ -1715,7 +1715,11 @@ correlation_arr = correlation_table(Input_spec_data,Input_phot_data)
 
 stellar_names = Input_phot_data[:,0]
 
-error_mask_recreate_bool = False # if False, then teff varying mask is assumed
+
+emask_kw_instrument = "HARPS" # can be "HARPS" or "UVES"
+emask_kw_teff = "solar" # can be "solar","teff_varying"
+error_mask_recreate_bool = False # if this is set to True, then emask_kw_teff defaults to "stellar"
+error_mask_recreate_arr = [error_mask_recreate_bool,emask_kw_instrument,emask_kw_teff]
 error_map_use_bool = True
 cont_norm_bool = False
 rv_shift_recalc = [False,-100,100,0.05]
@@ -1763,8 +1767,8 @@ spec_covariance_bool = True # To use spectroscopic covariance in creation of PDF
 
 # extra_save_string = "_no_evo_prior"
 # extra_save_string = ""
-# extra_save_string = "_solar_emask"
-extra_save_string = "_teff_emask"
+extra_save_string = "_solar_emask"
+# extra_save_string = "_teff_emask"
 
 if __name__ == '__main__':
     

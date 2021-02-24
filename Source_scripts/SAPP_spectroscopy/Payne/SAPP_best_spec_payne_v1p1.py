@@ -786,8 +786,14 @@ def find_best_val(ind_spec_arr):
     
     # Refers to list of reference values, Sun is index number 10
     
-    error_mask_recreate_bool = ind_spec_arr[3]
+    error_mask_recreate_arr = ind_spec_arr[3]
+
+    error_mask_recreate_bool = error_mask_recreate_arr[0]
     
+    emask_kw_instrument = error_mask_recreate_arr[1]
+    
+    emask_kw_teff = error_mask_recreate_arr[2]
+        
     # If the error mask needs to be re-made or doesn't exist for the spectra, then this is True
     
     # otherwise, this is False
@@ -1094,53 +1100,99 @@ def find_best_val(ind_spec_arr):
                 
                 residual_error_map_arr = [residual_error_map]
     
-            else:
+            elif error_mask_recreate_bool == False:
                 
-                print("USING TEFF VARYING ERROR MASK")
-                
-                if float(PLATO_bmk_lit[:,1][error_mask_index]) < 5500:
+                # emask_kw_instrument = error_mask_recreate_arr[1]
+    
+                # emask_kw_teff = error_mask_recreate_arr[2]
+    
+    
+                if emask_kw_teff == "solar":
+
+                    print("USING SOLAR ERROR MASK")
                     
-                    ### load low temp error mask :  del eri
+                    if emask_kw_instrument == "HARPS":
+                        
+                        residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+                        residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+                        residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
 
-                     residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr246_UVES_52.774g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
-                     residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr262_UVES_52.794g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
-                     residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/UVES_delEri_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")         
-                
-                     residual_error_map_arr = [residual_error_map_1,
-                                               residual_error_map_2,
-                                               residual_error_map_3]
-                     
-                elif 5500 <= float(PLATO_bmk_lit[:,1][error_mask_index]) < 6000:
+                        residual_error_map_arr = [residual_error_map_1,
+                                                  residual_error_map_2,
+                                                  residual_error_map_3]
+
                     
-                    ### load medium temp error mask : the sun
-  
-                    residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
-                    residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
-                    residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
-                    residual_error_map_4 = np.loadtxt("../Output_data/test_spectra_emasks/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
-  
-                    residual_error_map_arr = [residual_error_map_1,
-                                               residual_error_map_2,
-                                               residual_error_map_3,
-                                               residual_error_map_4]
-                     
-                
-                elif float(PLATO_bmk_lit[:,1][error_mask_index]) >= 6000:
+                    elif emask_kw_instrument == "UVES":
+                        
+
+                        residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+                        
+                        residual_error_map_arr = [residual_error_map_1]
                     
-                    ### load high temp error mask : Procyon
+                if emask_kw_teff == "teff_varying":
+                
+                    print("USING TEFF VARYING ERROR MASK")
+                    
+                    if float(PLATO_bmk_lit[:,1][error_mask_index]) < 5500:
+                        
+                        ### load low temp error mask :  del eri
+                        
+                        ### need to load up and create a HARPS equivelent for low temp stars
+                        
+                        if emask_kw_instrument == "UVES" or "HARPS":
+    
+                             residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr246_UVES_52.774g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+                             residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/ADP_deleri_snr262_UVES_52.794g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+                             residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/deleri/UVES_delEri_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")         
+                        
+                             residual_error_map_arr = [residual_error_map_1,
+                                                       residual_error_map_2,
+                                                       residual_error_map_3]
+                         
+                    elif 5500 <= float(PLATO_bmk_lit[:,1][error_mask_index]) < 6000:
+                        
+                        if emask_kw_instrument == "HARPS":
+                            
+                            residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+                            residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
+                            residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_snr300_error_synth_flag_True_cont_norm_convolved_hr10_error_mask.txt")
+    
+                            residual_error_map_arr = [residual_error_map_1,
+                                                      residual_error_map_2,
+                                                      residual_error_map_3]
+    
+                        
+                        elif emask_kw_instrument == "UVES":
+                            
+    
+                            residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/sun/UVES_Sun_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+                            
+                            residual_error_map_arr = [residual_error_map_1]
+                         
+                    
+                    elif float(PLATO_bmk_lit[:,1][error_mask_index]) >= 6000:
+                        
+                        ### load high temp error mask : Procyon
+                        
+                        if emask_kw_instrument == "HARPS":
 
-                    residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr493_UVES_21.007g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
-                    residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr544_UVES_21.033g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
-                    residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr549_UVES_48.418g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
-                    residual_error_map_4 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/HARPS_Procyon_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
-                    residual_error_map_5 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/UVES_Procyon_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+                            residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/HARPS_Procyon_snr300_error_synth_flag_True_cont_norm_convolved_hr10_.txt")
 
+                            residual_error_map_arr = [residual_error_map_1]
 
-                    residual_error_map_arr = [residual_error_map_1,
-                                               residual_error_map_2,
-                                               residual_error_map_3,
-                                               residual_error_map_4,
-                                               residual_error_map_5]
+                            
+                        if emask_kw_instrument == "UVES":
+    
+                            residual_error_map_1 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr493_UVES_21.007g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+                            residual_error_map_2 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr544_UVES_21.033g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+                            residual_error_map_3 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/ADP_procyon_snr549_UVES_48.418g_error_synth_flag_False_cont_norm_convolved_hr10_.txt")
+                            residual_error_map_4 = np.loadtxt("../Output_data/test_spectra_emasks/Procyon/UVES_Procyon_snr200_error_synth_flag_True_cont_norm_convolved_hr10_.txt")                    
+    
+    
+                            residual_error_map_arr = [residual_error_map_1,
+                                                       residual_error_map_2,
+                                                       residual_error_map_3,
+                                                       residual_error_map_4]
 
             # this function compares the error masks to the spectra it is being combined with
             # processes it such that the wavelength scale and limits match the observations
@@ -1555,11 +1607,11 @@ def find_best_val(ind_spec_arr):
                         efin_upper = efin
                         efin_lower = efin
                         
-                         print("===== niter_loop",nu_max_loop,"===== niter",ncount+1,"============================================")
-                         print("BEST fit parameters =",final)
-                         print("parameters ERROR upper =",efin_upper)
-                         print("parameters ERROR lower =",efin_lower)
-                         print("======================================================")
+                        print("===== niter_loop",nu_max_loop,"===== niter",ncount+1,"============================================")
+                        print("BEST fit parameters =",final)
+                        print("parameters ERROR upper =",efin_upper)
+                        print("parameters ERROR lower =",efin_lower)
+                        print("======================================================")
                         
                         ncount += 1
                         
@@ -1734,9 +1786,9 @@ def find_best_val(ind_spec_arr):
         
         ### normalize the covariance matrix, how? 
 
-         print("BEST fit parameters =",final)
-         print("parameters ERROR upper =",efin_upper)
-         print("parameters ERROR lower =",efin_lower)
+        print("BEST fit parameters =",final)
+        print("parameters ERROR upper =",efin_upper)
+        print("parameters ERROR lower =",efin_lower)
         
         # input_dict = {
         #                 "wvl_min_bool": wvl_min_bool,
@@ -2339,7 +2391,13 @@ spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_sn
 error_map_spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
 error_mask_index = 0
 
-error_mask_recreate_bool = True
+emask_kw_instrument = "HARPS" # can be "HARPS" or "UVES"
+emask_kw_teff = "teff_varying" # can be "solar","teff_varying", or "stellar"
+
+error_mask_recreate_bool = True # if this is set to True, then emask_kw_teff defaults to "stellar"
+
+error_mask_recreate_arr = [error_mask_recreate_bool,emask_kw_instrument,emask_kw_teff]
+
 error_map_use_bool = True
 cont_norm_bool = False
 rv_shift_recalc = [False,-100,100,0.05]
@@ -2355,7 +2413,7 @@ recalc_metals_inp = [5770,4.44,0,feh_recalc_fix_bool]
 ind_spec_arr = [[spec_path,\
                  error_map_spec_path,\
                  error_mask_index,\
-                 error_mask_recreate_bool,\
+                 error_mask_recreate_arr,\
                  error_map_use_bool,\
                  cont_norm_bool,\
                  rv_shift_recalc,\
