@@ -153,7 +153,12 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
     # Beginning and End windows now match the model
     # Truncation is required because HARPS covers more than UVES
     
-    geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
+    ## hr10
+    # geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
+
+    ## hr21/Gaia RVS 
+    geslines_synth_no_secondary_norm = [[8480,8510],[8530,8560],[8650,8685],[8692,8705],[8705,8719],[8740,8745],[8760,8770],[8770,8778],[8788.00,8800.00]]
+
 
     # The windows above are ones which should not go through secondary normalisation due to broad lines such as Halpha
     ###
