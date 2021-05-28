@@ -169,7 +169,7 @@ def restore1(wvl_arr, *labels):
     wvl_obs = wvl_arr[2:] # this needs to be used to cut pred flux, it is already been interpolated and shifted to rest frame
         
     
-    dummy = list(labels[1:])
+    # dummy = list(labels[1:])
         
     # fix=1#logg index
     # logg_fix_norm = (4.44-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
@@ -177,11 +177,11 @@ def restore1(wvl_arr, *labels):
     # dummy[1] = logg_fix_norm
 
     # labels_new = dummy[0],logg_fix_norm,dummy[2],dummy[3],dummy[4],dummy[5],dummy[6],dummy[7]
-    labels_new = dummy[0],dummy[1],dummy[2],dummy[3],dummy[4],dummy[5],dummy[6],dummy[7]
+    # labels_new = dummy[0],dummy[1],dummy[2],dummy[3],dummy[4],dummy[5],dummy[6],dummy[7]
     
     # print(labels_new)
     
-    # labels_new = dummy
+    labels_new = labels[1:]
     
     #1st layer
     
@@ -480,7 +480,7 @@ def RV_correction_vel_to_wvl_non_rel(waveobs,xRV):
         
     return waveobs_corr # teying to make an array or tuple here
 
-def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,savefig_bool,Resolution):
+def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,savefig_bool,Resolution,Resolution_convolve):
     
     """
     Calculate RV shift using CC method
@@ -500,7 +500,10 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
     spec_template_flux = spec_template[1]
         
     # spec_template_wvl,spec_template_flux = instrument_conv_res(spec_template_wvl, spec_template_flux, 18000)
-    spec_template_wvl,spec_template_flux = convolve_python(spec_template_wvl, spec_template_flux, 18000)
+    
+    if Resolution_convolve == True:
+    
+        spec_template_wvl,spec_template_flux = convolve_python(spec_template_wvl, spec_template_flux, Resolution)
             
     drvs = np.arange(rv_min,rv_max+drv,drv)
     
@@ -508,19 +511,72 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
     
     # Speed of light in km/s
     c = 299792.458
-            
+    
+    obs_cut = obs.copy()
+    wvl_cut = wvl.copy()
+    usert_cut = usert.copy()
+        
     for i,rv in enumerate(drvs):
         
-        fi = sci.interp1d(spec_template_wvl*(1.0 + rv/c), spec_template_flux)
+        spec_template_wvl_doppler_shift = spec_template_wvl*(1.0 + rv/c)
         
-        # model is interpolated onto observed spectrum... this is strange
+        fi = sci.interp1d(spec_template_wvl_doppler_shift, spec_template_flux)
         
-        cc[i] = np.sum(obs * fi(wvl)) # is this the literal definition of CC, where's the fourier transform?
+        ## annoying to check every time, but this will vary per calculation!
+                
+        # if max(wvl) > max(spec_template_wvl_doppler_shift):
+                
+                # cut to max
+                
+        obs_cut = obs_cut[wvl_cut <=  max(spec_template_wvl_doppler_shift)]
+        usert_cut = usert_cut[wvl_cut <=  max(spec_template_wvl_doppler_shift)]
+        wvl_cut = wvl_cut[wvl_cut <=  max(spec_template_wvl_doppler_shift)]
+                
+        # if min(wvl) <  min(spec_template_wvl_doppler_shift):
+                
+                # cut to model min
+
+        obs_cut = obs_cut[wvl_cut >= min(spec_template_wvl_doppler_shift)]
+        usert_cut = usert_cut[wvl_cut >= min(spec_template_wvl_doppler_shift)]
+        wvl_cut = wvl_cut[wvl_cut >= min(spec_template_wvl_doppler_shift)]
         
-    
+        # model is interpolated onto observed spectrum... this is strange        
+        cc[i] = np.sum(obs_cut * fi(wvl_cut)) # is this the literal definition of CC, where's the fourier transform?
+        
+        
     # Find the index of maximum cross-correlation function
     max_ind = np.argmax(cc)
     
+    ### calc chi2 i.e. how good is the fit?
+        
+    spec_template_wvl_doppler_shift = spec_template_wvl*(1.0 + drvs[max_ind]/c)
+    
+    fi_chi = sci.interp1d(spec_template_wvl_doppler_shift, spec_template_flux)
+    
+    obs_chi = obs.copy()
+    usert_chi = usert.copy()
+    wvl_chi = wvl.copy()
+    
+    obs_chi = obs_chi[wvl_chi <=  max(spec_template_wvl_doppler_shift)]
+    usert_chi = usert_chi[wvl_chi <=  max(spec_template_wvl_doppler_shift)]
+    wvl_chi = wvl_chi[wvl_chi <=  max(spec_template_wvl_doppler_shift)]
+            
+    obs_chi = obs_chi[wvl_chi >= min(spec_template_wvl_doppler_shift)]
+    usert_chi = usert_chi[wvl_chi >= min(spec_template_wvl_doppler_shift)]
+    wvl_chi = wvl_chi[wvl_chi >= min(spec_template_wvl_doppler_shift)]
+    
+    model_flux = fi_chi(wvl_chi)
+    
+    chi2_rv_arr = (model_flux-obs_chi) ** 2 / usert_chi ** 2
+    
+    ## clean through inf values
+    
+    no_inf_index = np.isfinite(chi2_rv_arr)
+    
+    chi2_rv_arr_clean = chi2_rv_arr[no_inf_index]
+    
+    chi2_rv = np.nansum(chi2_rv_arr_clean/(len(chi2_rv_arr_clean)-8)) # 8 dimensions, duh
+        
     ### RV plot ###
                 
     # title_filename = star_ids_bmk[ind_spec].split("_snr")[0] + "_snr" + star_ids_bmk[ind_spec].split("_snr")[1].split("_")[0]
@@ -580,7 +636,192 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
         
         plt.show()
                         
-    return drvs[max_ind],drvs,cc
+    return drvs[max_ind],drvs,cc,chi2_rv
+
+def star_model(wavelength,labels):
+    
+    """
+    takes wavelength and wanted stellar parameters, it spits out model you want
+    """
+    
+    wvl_min_bool = min(wavelength)
+    wvl_max_bool = max(wavelength)
+    wvl_to_cut = [] # keep empty
+    
+    # convert parameters to normalised space 
+
+    labels_norm = (labels-x_min)/(x_max-x_min)-0.5 
+    
+    labels_inp = np.hstack(([0],labels_norm))
+    
+    wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,wvl_to_cut))
+
+    model = restore1(wvl_obs_input,*labels_inp)
+    
+    return w0, model 
+
+
+def RV_multi_template(wvl,
+                      obs,
+                      usert,
+                      rv_min,
+                      rv_max,
+                      drv,
+                      spec_resolution):
+    
+    """
+    This takes in a hr10 observation and rv initial limits to find the most likely rv
+    
+    based on three templates 
+    
+    """
+    
+    # print("=====================")
+    # print("SOLAR RV")
+                
+    model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0])                  
+    
+    ## in this case the model wvl range will not be always larger than the observed
+    ## this means to interpolate the obs to the model wvl range, you need to make sure
+    ## that wvl obs is within the range of the model
+    ## as the model will not exist outside its own range, you should NOT extrapolate the model
+    ## therefore, you must cut the obs in both ends just in case, only the obs, do not worry about the model
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min,\
+                                                          rv_max,\
+                                                          drv,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)            
+
+        
+    # fab, now grab that rough RV value, redo this and choose a range around that
+    
+    rv_min_focus = rv_shift - 2 # km/s
+    rv_max_focus = rv_shift + 2 # km/s
+    drv_focus = 0.05 # km/s
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min_focus,\
+                                                          rv_max_focus,\
+                                                          drv_focus,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)
+    
+    solar_chi2 = chi2_rv
+    solar_rv = rv_shift
+    solar_rv_err = drv_focus
+        
+    # now we have to do this again with two other templates 
+
+    ### RGB solar metallicty RV TEMPLATE ###
+
+    # print("=====================")
+    # print("RGB solar [Fe/H] RV")
+
+                
+    model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,1,1,0,0,0])                  
+    
+    ## in this case the model wvl range will not be always larger than the observed
+    ## this means to interpolate the obs to the model wvl range, you need to make sure
+    ## that wvl obs is within the range of the model
+    ## as the model will not exist outside its own range, you should NOT extrapolate the model
+    ## therefore, you must cut the obs in both ends just in case, only the obs, do not worry about the model
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min,\
+                                                          rv_max,\
+                                                          drv,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)            
+
+        
+    # fab, now grab that rough RV value, redo this and choose a range around that
+    
+    rv_min_focus = rv_shift - 2 # km/s
+    rv_max_focus = rv_shift + 2 # km/s
+    drv_focus = 0.05 # km/s
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min_focus,\
+                                                          rv_max_focus,\
+                                                          drv_focus,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)
+
+    rgb_chi2 = chi2_rv
+    rgb_rv = rv_shift
+    rgb_rv_err = drv_focus
+
+
+    ### RGB poor metallicty RV TEMPLATE ###
+
+    # print("=====================")
+    # print("RGB poor [Fe/H] RV")
+                
+    model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,1,1,-0.2,-0.2,-0.8])                  
+    
+    ## in this case the model wvl range will not be always larger than the observed
+    ## this means to interpolate the obs to the model wvl range, you need to make sure
+    ## that wvl obs is within the range of the model
+    ## as the model will not exist outside its own range, you should NOT extrapolate the model
+    ## therefore, you must cut the obs in both ends just in case, only the obs, do not worry about the model
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min,\
+                                                          rv_max,\
+                                                          drv,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)            
+
+        
+    # fab, now grab that rough RV value, redo this and choose a range around that
+    
+    rv_min_focus = rv_shift - 2 # km/s
+    rv_max_focus = rv_shift + 2 # km/s
+    drv_focus = 0.05 # km/s
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min_focus,\
+                                                          rv_max_focus,\
+                                                          drv_focus,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)
+
+    rgb_mp_chi2 = chi2_rv
+    rgb_mp_rv = rv_shift
+    rgb_mp_rv_err = drv_focus
+
+    chi2_results = [solar_chi2,rgb_chi2,rgb_mp_chi2]
+    rv_results = [solar_rv,rgb_rv,rgb_mp_rv]
+    rv_err_results = [solar_rv_err,rgb_rv_err,rgb_mp_rv_err]
+
+    chi2_best = min(chi2_results)
+
+    rv_best = rv_results[np.argsort(chi2_results)[0]]
+
+    rv_err_best = rv_err_results[np.argsort(chi2_results)[0]]    
+    
+    return rv_best,rv_err_best
+
 
 def read_fits_GES_GIR_spectra(path):
         
@@ -624,7 +865,7 @@ def read_fits_GES_GIR_spectra(path):
 ### need to interpolate/cut error mask to the observations, if it deosn't exist in a region then place 0
 ### i.e. no weight on that pixel
 
-def read_txt_spectra(path,rv_calc):
+def read_txt_spectra(path):
     
     """
     Reads simple text file where first column is wavelength
@@ -643,39 +884,9 @@ def read_txt_spectra(path,rv_calc):
     SNR_med = int(float(path.split("snr")[1].split("_")[0]))
     
     error_med = flux/SNR_med 
-    
-    # print("No RV correction found, calculating...")
-    
-    if rv_calc == True:
-    
-        print("calculating rv shift")    
-    
-        rv_min = -100
-        rv_max = 100
-        drv = 0.05
-        
-        spec_resolution = 20000
-        
-        spec_template_wvl = wvl_solar_model
-        spec_template_flux = flux_solar_model
-                
-        rv_shift,rv_array,cross_corr = rv_cross_corelation_no_fft([wavelength,flux,error_med],\
-                                                                      [spec_template_wvl,spec_template_flux],\
-                                                                      rv_min,\
-                                                                      rv_max,\
-                                                                      drv,\
-                                                                      title="",\
-                                                                      savefig_bool=False,\
-                                                                      Resolution=spec_resolution)
-    
-        print("Calc RV ",rv_shift,"+-",drv,"Km/s")
-    
-        rv_shift_err = drv
-        
-    else:
-        
-        rv_shift = np.nan
-        rv_shift_err = np.nan
+           
+    rv_shift = np.nan
+    rv_shift_err = np.nan
         
     return wavelength,flux,error_med,rv_shift,rv_shift_err,SNR_med
     
@@ -769,16 +980,15 @@ def find_best_val(ind_spec_arr):
     """
     
                 
-    spec_path = "../Input_data/spectroscopy_observation_data/" + ind_spec_arr[0]
-            
-    # spec_path = "../../../Input_data/spectroscopy_observation_data/" + ind_spec_arr[0]
+    spec_path = "../Input_data/spectroscopy_observation_data/" + ind_spec_arr[0] # running in main.py
+    # spec_path = "../../../Input_data/spectroscopy_observation_data/" + ind_spec_arr[0] # running directly here
     
     # print("SPECTRAL PATH",spec_path)
     
     # observation spec we want to look at now
     
-    error_map_spec_path = "../Input_data/spectroscopy_observation_data/" + ind_spec_arr[1]
-    # error_map_spec_path = "../../../Input_data/spectroscopy_observation_data/" + ind_spec_arr[1]
+    error_map_spec_path = "../Input_data/spectroscopy_observation_data/" + ind_spec_arr[1] # running in main.py
+    # error_map_spec_path = "../../../Input_data/spectroscopy_observation_data/" + ind_spec_arr[1] # running directly here
     
     # observation spec we want to use for the error map
     
@@ -868,8 +1078,9 @@ def find_best_val(ind_spec_arr):
     if np.isnan(logg_fix) == True:
         
         logg_fix_bool = False
-
-
+        
+    unique_emask_params_arr = ind_spec_arr[15]
+    
     """
     Below is where the spectral information is fed in, this function should be tailored to the specific type of file
     and so can be easily changed. This information is all standard.
@@ -895,7 +1106,7 @@ def find_best_val(ind_spec_arr):
     error_med,\
     rv_shift,\
     rv_shift_err,\
-    snr_star = read_txt_spectra(spec_path,rv_calc=True)
+    snr_star = read_txt_spectra(spec_path)
         
     ### HARPS/UVES fit files
     
@@ -979,8 +1190,8 @@ def find_best_val(ind_spec_arr):
         Does the RV value exist? If not, calculate it.
         """
                 
-        spec_template_wvl = wvl_solar_model
-        spec_template_flux = flux_solar_model
+        # spec_template_wvl = wvl_solar_model
+        # spec_template_flux = flux_solar_model
         
         # the values below should be edited outside of the function
         
@@ -999,14 +1210,13 @@ def find_best_val(ind_spec_arr):
             print("Re-calculating RV correction...")
             
             
-            rv_shift,rv_array,cross_corr = rv_cross_corelation_no_fft([wvl,obs,usert],\
-                                                                  [spec_template_wvl,spec_template_flux],\
-                                                                  rv_min,\
-                                                                  rv_max,\
-                                                                  drv,\
-                                                                  title="",\
-                                                                  savefig_bool=False,\
-                                                                  Resolution=spec_resolution)
+            rv_shift, rv_shift_err = RV_multi_template(wvl,
+                                                      obs,
+                                                      usert,
+                                                      rv_min,
+                                                      rv_max,
+                                                      drv,
+                                                      spec_resolution)
                 
             rv_shift_err = drv
         
@@ -1017,14 +1227,13 @@ def find_best_val(ind_spec_arr):
             print("Re-calculating RV correction...")
             
             
-            rv_shift,rv_array,cross_corr = rv_cross_corelation_no_fft([wvl,obs,usert],\
-                                                                  [spec_template_wvl,spec_template_flux],\
-                                                                  rv_min,\
-                                                                  rv_max,\
-                                                                  drv,\
-                                                                  title="",\
-                                                                  savefig_bool=False,\
-                                                                  Resolution=spec_resolution)
+            rv_shift, rv_shift_err = RV_multi_template(wvl,
+                                                      obs,
+                                                      usert,
+                                                      rv_min,
+                                                      rv_max,
+                                                      drv,
+                                                      spec_resolution)
 
 
             rv_shift_err = drv
@@ -1096,7 +1305,7 @@ def find_best_val(ind_spec_arr):
 
                 print("USING STELLAR ERROR MASK")
                 
-                residual_error_map = create_error_mask(error_map_spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution)
+                residual_error_map = create_error_mask(error_map_spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution,unique_emask_params_arr)
                 
                 residual_error_map_arr = [residual_error_map]
     
@@ -1352,7 +1561,7 @@ def find_best_val(ind_spec_arr):
             #renormalise spectral parameters
             final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
 
-            print("BEST fit parameters =",final)
+            # print("BEST fit parameters =",final)
                             
             #renormalise spectral parameters errors
             efin=efin*(x_max-x_min)
@@ -1360,8 +1569,8 @@ def find_best_val(ind_spec_arr):
             efin_upper = efin
             efin_lower = efin
 
-            print("parameters ERROR upper =",efin_upper)
-            print("parameters ERROR lower =",efin_lower)
+            # print("parameters ERROR upper =",efin_upper)
+            # print("parameters ERROR lower =",efin_lower)
             
         elif recalc_metals_bool == False:
         
@@ -1485,7 +1694,7 @@ def find_best_val(ind_spec_arr):
                         
             final = ((labels_fit.T + 0.5)*(x_max-x_min) + x_min).T
                     
-            print("BEST fit parameters =",final)
+            # print("BEST fit parameters =",final)
             
             #renormalise spectral parameters errors
             efin=efin*(x_max-x_min)
@@ -1493,12 +1702,16 @@ def find_best_val(ind_spec_arr):
             efin_upper = efin
             efin_lower = efin
              
-            print("parameters ERROR upper =",efin_upper)
-            print("parameters ERROR lower =",efin_lower)
+            # print("parameters ERROR upper =",efin_upper)
+            # print("parameters ERROR lower =",efin_lower)
              
             # print("Before parameter estimation nu max : time elapsed ----",time.time()-start_time,"----- seconds ----")
             
             if numax_iter_bool == True:
+                
+                final_orig = final # the initial run 
+                efin_orig = efin
+                popt_orig = popt
                 
                 """
                 The estimates above are a first gues. 
@@ -1539,15 +1752,21 @@ def find_best_val(ind_spec_arr):
                 
                     ncount = 0        
                     
-                    final_collect = [final]
-                    efin_collect = [efin]
-                    popt_collect = [popt]
+                    final_collect = [final_orig]
+                    efin_collect = [efin_orig]
+                    popt_collect = [popt_orig]
                     
                     while ncount <= niter_MAX:
                         
                         # print(type(nu_max),astroc.nu_max_sol,final[0],astroc.teff_sol,astroc.surf_grav_sol)
                         
-                        logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+                        if ncount == 0: # use the initial guess
+                            
+                            logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final_orig[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+                            
+                        else: # use the parameter "final" which is overwritten 
+                            
+                            logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
             
                         # print(nu_max_loop,ncount,final[0]*1000,logg_numax)
                         
@@ -1660,15 +1879,24 @@ def find_best_val(ind_spec_arr):
                     of this region.
                     """
                     
-                    efin = np.array([\
-                            (np.std(np.array(final_collect)[:,0][tdiff_index:])**2 + efin_spec[0]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,1][tdiff_index:])**2 + efin_spec[1]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,2][tdiff_index:])**2 + efin_spec[2]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,3][tdiff_index:])**2 + efin_spec[3]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,4][tdiff_index:])**2 + efin_spec[4]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,5][tdiff_index:])**2 + efin_spec[5]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,6][tdiff_index:])**2 + efin_spec[6]**2)**0.5,\
-                            (np.std(np.array(final_collect)[:,7][tdiff_index:])**2 + efin_spec[7]**2)**0.5])
+                    # efin = np.array([\
+                    #         (np.std(np.array(final_collect)[:,0][tdiff_index:])**2 + efin_spec[0]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,1][tdiff_index:])**2 + efin_spec[1]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,2][tdiff_index:])**2 + efin_spec[2]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,3][tdiff_index:])**2 + efin_spec[3]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,4][tdiff_index:])**2 + efin_spec[4]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,5][tdiff_index:])**2 + efin_spec[5]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,6][tdiff_index:])**2 + efin_spec[6]**2)**0.5,\
+                    #         (np.std(np.array(final_collect)[:,7][tdiff_index:])**2 + efin_spec[7]**2)**0.5])
+
+
+                    efin = []
+                    
+                    for efin_i in range(len(efin_spec)):
+                        
+                        efin.append((np.std(np.array(final_collect)[:,efin_i][tdiff_index:])**2 + efin_spec[efin_i]**2)**0.5)
+                        
+                    efin = np.array(efin)
 
                     
                     final_nu_max_collect.append(final)
@@ -2069,23 +2297,46 @@ def find_best_val_fix_all(ind_spec_arr): # used for creating error maps from ref
                 
     return [final,efin_upper,efin_lower,rv_shift,ch2,wvl_corrected,obs,fit,w0_new]
 
-def create_error_mask(spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution):
+def create_error_mask(spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution,unique_emask_params_arr):
                     
     ### star_id_use plugs into PLATO_bmk_lit and PLATO_bmk_lit_other_params to grab literature values :) 
     
-    star_plot_lit_values = PLATO_bmk_lit[error_mask_index] #name, teff, logg, feh (inc errors)
-                
-    star_plot_temp = float(star_plot_lit_values[1])
-    star_plot_logg = float(star_plot_lit_values[3])
-    star_plot_feh = float(star_plot_lit_values[5])
+    if unique_emask_params_arr[0] == True:
         
-    star_plot_other_lit_values = PLATO_bmk_lit_other_params[error_mask_index] #name, vmic, vsini, mgfe, tife, mnfe (inc errors)
+        # print(unique_params_arr[2],unique_params_arr[1])
         
-    star_plot_vmic = float(star_plot_other_lit_values[1])
-    star_plot_vsini = float(star_plot_other_lit_values[3])
-    star_plot_mgfe = float(star_plot_other_lit_values[5])
-    star_plot_tife = float(star_plot_other_lit_values[7])
-    star_plot_mnfe = float(star_plot_other_lit_values[9])
+        unique_emask_params = unique_emask_params_arr[1]
+        
+        star_plot_temp =  unique_emask_params[0]
+        star_plot_logg =  unique_emask_params[1]
+        star_plot_feh =  unique_emask_params[2]      
+        star_plot_vmic =  unique_emask_params[3]
+        star_plot_vsini =  unique_emask_params[4]
+        star_plot_mgfe =  unique_emask_params[5]
+        star_plot_tife =  unique_emask_params[6]
+        star_plot_mnfe =  unique_emask_params[7]
+        
+    else:
+        
+        # print(error_mask_index)
+        
+        star_plot_lit_values = PLATO_bmk_lit[error_mask_index] #name, teff, logg, feh (inc errors)
+            
+        # print(star_conv_list_HARPS[HARPS_loop_index],star_ids_bmk[star_id_use_HARPS])
+        
+        # print(star_plot_lit_values)
+        
+        star_plot_temp = float(star_plot_lit_values[1])
+        star_plot_logg = float(star_plot_lit_values[3])
+        star_plot_feh = float(star_plot_lit_values[5])
+            
+        star_plot_other_lit_values = PLATO_bmk_lit_other_params[error_mask_index] #name, vmic, vsini, mgfe, tife, mnfe (inc errors)
+            
+        star_plot_vmic = float(star_plot_other_lit_values[1])
+        star_plot_vsini = float(star_plot_other_lit_values[3])
+        star_plot_mgfe = float(star_plot_other_lit_values[5])
+        star_plot_tife = float(star_plot_other_lit_values[7])
+        star_plot_mnfe = float(star_plot_other_lit_values[9])
         
     labels_inp_star_plot = np.array([star_plot_temp/1000,\
                               star_plot_logg,\
@@ -2097,7 +2348,9 @@ def create_error_mask(spec_path,error_mask_index,cont_norm_bool,rv_shift,rv_shif
                               star_plot_mnfe])
             
     spec_results = find_best_val_fix_all([spec_path,labels_inp_star_plot,cont_norm_bool,rv_shift,rv_shift_err,conv_instrument_bool,input_spec_resolution])
-                
+        
+    # final,efin_upper,efin_lower,rv_shift,ch2,wvl_corrected,obs,fit
+        
     wavelength = spec_results[5]
     observation = spec_results[6] # should be the same as obs
     model = spec_results[7]
@@ -2334,9 +2587,9 @@ def error_mask_trim_process(residual_error_map,wvl_corrected,obs):
     return wvl_err_mask,err_mask
 
 
-Input_data_path_main = "../Input_data/"
+Input_data_path_main = "../Input_data/" # running in main.py
                                        
-#Input_data_path_main = "../../../Input_data/"
+# Input_data_path_main = "../../../Input_data/" # running directly here 
 
 Input_data_path = Input_data_path_main
 
@@ -2387,30 +2640,38 @@ wgd=np.array([5503.08,5577.34]) # bad lines example
 
 
 '''
-spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
-error_map_spec_path = Input_data_path + "spectroscopy_observation_data/18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+spec_path = "18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+error_map_spec_path = "18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
+
 error_mask_index = 0
 
 emask_kw_instrument = "HARPS" # can be "HARPS" or "UVES"
 emask_kw_teff = "teff_varying" # can be "solar","teff_varying", or "stellar"
 
-error_mask_recreate_bool = True # if this is set to True, then emask_kw_teff defaults to "stellar"
+error_mask_recreate_bool = False # if this is set to True, then emask_kw_teff defaults to "stellar"
 
 error_mask_recreate_arr = [error_mask_recreate_bool,emask_kw_instrument,emask_kw_teff]
 
-error_map_use_bool = True
+error_map_use_bool = False
 cont_norm_bool = False
-rv_shift_recalc = [False,-100,100,0.05]
+rv_shift_recalc = [False,-400,400,0.5]
 conv_instrument_bool = False
-input_spec_resolution = 18000
+input_spec_resolution = 20000
 numax_iter_bool = False
 niter_numax_MAX = 5
 numax_input_arr = [3170,159,niter_numax_MAX]
 recalc_metals_bool = False
 feh_recalc_fix_bool = False
 recalc_metals_inp = [5770,4.44,0,feh_recalc_fix_bool]
+logg_fix_bool = False
+logg_fix_load = np.loadtxt("../../../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/seismology_lhood_results/18sco_seismic_logg.txt",dtype=str)
+logg_fix_input_arr = [float(logg_fix_load[1]),float(logg_fix_load[2]),float(logg_fix_load[3])]
+unique_emask_params_bool = False
+unique_emask_params = [5777,4.44,0,1,1.6,0,0,0] # solar example 
 
-ind_spec_arr = [[spec_path,\
+
+
+ind_spec_arr = [spec_path,\
                  error_map_spec_path,\
                  error_mask_index,\
                  error_mask_recreate_arr,\
@@ -2424,7 +2685,8 @@ ind_spec_arr = [[spec_path,\
                  recalc_metals_bool,\
                  recalc_metals_inp,\
                  logg_fix_bool,\
-                 logg_fix_input_arr],stellar_names[inp_index],spec_type]
+                 logg_fix_input_arr,\
+                 [unique_emask_params_bool,unique_emask_params]]
 find_best_val(ind_spec_arr)
 '''
                                        
