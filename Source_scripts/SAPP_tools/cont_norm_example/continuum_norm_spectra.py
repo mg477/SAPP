@@ -10,60 +10,15 @@ import numpy as np
 import pandas as pd 
 import matplotlib.pyplot as plt
 
-from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes
-from mpl_toolkits.axes_grid1.inset_locator import mark_inset
-
-
 # use LaTex font
 from matplotlib.pyplot import rc
 
-# font = {'family': 'serif',
-#        'serif': ['Computer Modern'],
-#        'size': 22}
+font = {'family': 'serif',
+       'serif': ['Computer Modern'],
+       'size': 22}
 
-# rc('font', **font)
-rc('text', usetex=False)
-
-def mad(arr):
-    """Calculate median absolute deviation"""
-    arr = np.array(arr)
-    med = np.median(arr)
-    return np.median(abs(arr-med))
-
-
-def sigclip(data, sig):
-    """Sigma clip the data"""
-    n = len(data)
-
-    start = 0
-    step = 500
-    end = start + step
-
-    dataout = np.zeros(n)
-    while end < n:
-        data2 = data[start:end]
-        m = np.median(data2)
-        s = mad(data2)
-
-        idx = data[start:end] > m+sig*s # how does this line work?
-        dataout[start:end][~idx] = data[start:end][~idx] # what does ~ operator do?
-        for i in range(start, end):
-            if data[i] > m+sig*s:
-                dataout[i] = dataout[i-1]
-        start = end
-        end = start+step
-
-    data2 = data[start:n]
-    m = np.median(data2)
-    s = mad(data2)
-    for i in range(start,n):
-        if data[i] > m+sig*s:
-            dataout[i] = data[i-1]
-
-    idx = data[start:n] > m+sig*s
-    dataout[start:n][~idx] = data[start:n][~idx]
-    return dataout
-
+rc('font', **font)
+rc('text', usetex=True)
 
 
 def continuum(wl, flux, error, snr, med_bool): # applied to each section right?
@@ -100,8 +55,23 @@ def secondary_normalisation_given_zone(wavelength_norm,flux_norm,error_flux_norm
     wavelength_norm = np.array(wavelength_norm)
     error_flux_norm = np.array(error_flux_norm)
 
-    wavelength_split_mid = int(len(wavelength_norm)/2)# int rounds down     
+    wavelength_split_mid = int(len(wavelength_norm)/2)# int rounds down   
+    
+    # while 2*buffer >= (max(wavelength_norm)-min(wavelength_norm)): # i.e. if the last zone is really small, 
+        
+    #     buffer = 0.5 * buffer
 
+    if 2*buffer >= (max(wavelength_norm)-min(wavelength_norm)):
+        
+        # if your buffer is on the order of the zone you are looking at
+        # the zone itself is probably really small as the buffer tends to be small
+        # if this is the case, don't continuum normalise it
+        # stay with a first order continuum normalisation
+        # if you still want to do it, make the buffer very small i.e. 10% range of wavelength zone
+        
+        buffer = 0.1 * (max(wavelength_norm)-min(wavelength_norm))
+            
+        
     flux_split_range = flux_norm[wavelength_norm<=wavelength_norm[wavelength_split_mid]+buffer]            
     error_split_range = error_flux_norm[wavelength_norm<=wavelength_norm[wavelength_split_mid]+buffer]
     wavelength_split_range = wavelength_norm[wavelength_norm<=wavelength_norm[wavelength_split_mid]+buffer]
@@ -118,6 +88,8 @@ def secondary_normalisation_given_zone(wavelength_norm,flux_norm,error_flux_norm
     closest_value = min(a_list, key=absolute_difference_function)
                                 
     wavelength_split_mid_new = wavelength_norm[flux_norm==closest_value]
+    
+    # print("WVL MID POINT ARR",min(wavelength_norm),wavelength_norm[wavelength_split_mid],max(wavelength_norm))
     
     wavelength_first_half = wavelength_norm[wavelength_norm<=wavelength_split_mid_new]
     flux_norm_first_half = flux_norm[wavelength_norm<=wavelength_split_mid_new]
@@ -181,7 +153,12 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
     # Beginning and End windows now match the model
     # Truncation is required because HARPS covers more than UVES
     
-    geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
+    ## hr10
+    # geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
+
+    ## hr21/Gaia RVS 
+    geslines_synth_no_secondary_norm = [[8480,8510],[8530,8560],[8650,8685],[8692,8705],[8705,8719],[8740,8745],[8760,8770],[8770,8778],[8788.00,8800.00]]
+
 
     # The windows above are ones which should not go through secondary normalisation due to broad lines such as Halpha
     ###
@@ -196,8 +173,8 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
         
         if N_nan/len(error_flux) > 0.2:
             
-            print("More than 20\% of the errors are NaN values")
-            print("Estimating error via SNR")
+            # print("More than 20\% of the errors are NaN values")
+            # print("Estimating error via SNR")
             
             error_flux = 1/SNR_star * flux
     
@@ -207,6 +184,14 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
         
     # basically an error will exist regardless 
         
+    # what about spectra which have values less than zero?
+    
+    # same treatment?
+    
+    # if the snr is still larger than 0 then will still have to treat these
+    
+    # so yes, do it
+    
     ### Search spectra for zeroes!!! ###
     zero_collect = []
     flux_without_zeroes = []
@@ -215,7 +200,7 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
             
     for zero_search in range(len(flux)):
         
-        if flux[zero_search] == 0:
+        if flux[zero_search] <= 0: # was == before, now this catches negative fluxes
             
             zero_collect.append(zero_search)
             continue
@@ -248,7 +233,7 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
     continuum_stitch = []
     
     N_windows = len(geslines_synth)
-        
+            
     for zones in range(len(geslines_synth)):
         
         if len(geslines_synth) < N_windows: 
@@ -280,25 +265,25 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
                     if wvl_RdBl_gap[gap_counter][1] < wavelength_z_max_next:
                                             
                         # If this zone contains the gap, adjust window to account for gap
-                        print("Significant gap in next zone of spectra")
-                        print("Gap occurs in windows =",wavelength_z_min_next,",",wavelength_z_max_next)
+                        # print("Significant gap in next zone of spectra")
+                        # print("Gap occurs in windows =",wavelength_z_min_next,",",wavelength_z_max_next)
                         
-                        print("Creating wavelength window limits for zone")
+                        # print("Creating wavelength window limits for zone")
                         
-                        print("New wavelength window for zone =",zones)
+                        # print("New wavelength window for zone =",zones)
                         
                         geslines_synth[zones][1] = wvl_RdBl_gap[gap_counter][0] # current window end needs to be the window gaps begining 
                         wavelength_z_max = geslines_synth[zones][1]
                         
-                        print(wavelength_z_min,wavelength_z_max)
+                        # print(wavelength_z_min,wavelength_z_max)
     
                         # Need to make the window next + 1 beginning to be the end of this gap
                         
-                        print("New wavelength window for zone =",zones+2)
+                        # print("New wavelength window for zone =",zones+2)
                         
                         geslines_synth[zones+2][0] = wvl_RdBl_gap[gap_counter][1]
                         
-                        print(geslines_synth[zones+2][0],geslines_synth[zones+2][1])
+                        # print(geslines_synth[zones+2][0],geslines_synth[zones+2][1])
                         
                         # Now need to get rid of element window in zone + 1
                                             
@@ -333,18 +318,17 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
         flux_obs_zone = flux_obs_zone[wavelength_obs_zone >= wavelength_z_min]
         error_flux_zone = error_flux_zone[wavelength_obs_zone >= wavelength_z_min]
         wavelength_obs_zone = wavelength_obs_zone[wavelength_obs_zone >= wavelength_z_min]    
-        
 
         if len(flux_obs_zone) == 0:
             
-            print("Zone contains no data, continuum normalisation not possible")
-            print("Wavlength range =",wavelength_z_min,",",wavelength_z_max)
-            print("Skipping zone")
+            # print("Zone contains no data, continuum normalisation not possible")
+            # print("Wavlength range =",wavelength_z_min,",",wavelength_z_max)
+            # print("Skipping zone")
             
             continue
         
         # first stage continuum normalisation
-                
+                        
         wavelength_norm,flux_norm,error_flux_norm,continuum_vardon = continuum(wavelength_obs_zone,flux_obs_zone,error_flux_zone,SNR_star,med_bool)
         
         #secondary normalisation
@@ -377,11 +361,13 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
             
             wavelength_norm,flux_norm,error_flux_norm,continuum_vardon = secondary_normalisation_given_zone(wavelength_norm,flux_norm,error_flux_norm,SNR_star,secondary_continuum_buffer,med_bool)
 
-            print("Secondary normalisation performed on zone =",zones)
+            # print("Secondary normalisation performed on zone =",zones)
             
         else: # I.e. forbidden_secondary = True
             
-            print("Secondary normalisation not authorised for zone =",zones)
+            # print("Secondary normalisation not authorised for zone =",zones)
+            
+            pass
                     
         
         if zones == 0: # initialisation
@@ -403,7 +389,7 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
 
 #    np.savetxt(f"sapp_seg_v1_"+ star_name.replace(".fits","") +".txt",geslines_synth,fmt='%10.2f',delimiter='\t')
     
-    print("Zone continuum fitting finished")
+    # print("Zone continuum fitting finished")
     
     ### Here I am noising up the gaps between spectra. To account for edge effects
         
@@ -421,186 +407,56 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
     return [wavelength_normalised_stitch,flux_normalised_stitch,error_flux_normalised_stitch,continuum_stitch,geslines_synth]
 
 
-# filename = "UVES_18Sco.txt"
-# filename = "UVES_delEri.txt"
-filename = "18_sco_HD146233.HARPS-N.dop.txt"
-# filename = "18_scoHD146233.HARPS-S.dop.txt"
-# filename = "Vesta.dop.txt"
+# filename = "18_sco_HD146233.HARPS-N.dop.txt"
 
-# filename = "final_coadded_spectrum_k2-138.txt"
+# star_example = np.loadtxt(filename)
+# wavelength = star_example[:,0]
+# flux = star_example[:,1]
+# error_flux = []
+# SNR_star = 300
+# continuum_buffer = 0 # angstroms
+# secondary_continuum_buffer = 2.5 # angstroms
+# geslines_synth = np.loadtxt("sapp_seg_v1.txt")
+# med_bool = True
 
-star_example = np.loadtxt(filename)
-wavelength = star_example[:,0]
-flux = star_example[:,1]
-error_flux = []
-SNR_star = 300
-continuum_buffer = 0 # angstroms
-secondary_continuum_buffer = 2.5 # angstroms
-geslines_synth = np.loadtxt("sapp_seg_v1.txt")
-med_bool = True
-
-spec_norm_results = continuum_normalise_spectra(wavelength,\
-                            flux,\
-                            error_flux,\
-                            SNR_star,\
-                            continuum_buffer,\
-                            secondary_continuum_buffer,\
-                            geslines_synth,\
-                            med_bool)
+# spec_norm_results = continuum_normalise_spectra(wavelength,\
+#                             flux,\
+#                             error_flux,\
+#                             SNR_star,\
+#                             continuum_buffer,\
+#                             secondary_continuum_buffer,\
+#                             geslines_synth,\
+#                             med_bool)
     
-wavelength_normalised_stitch = spec_norm_results[0]
-flux_normalised_stitch = spec_norm_results[1]
-error_flux_normalised_stitch = spec_norm_results[2]
-continuum_stitch = spec_norm_results[3]
-geslines_synth = spec_norm_results[4]
-
-
-''
-### PLOTTING NORMALISATION ZONES ###
-
-flux_dummy = flux
-wavelength_dummy = wavelength
-
-# flux_dummy = flux_normalised_stitch
-# wavelength_dummy = wavelength_normalised_stitch
-
-fig3 = plt.figure(figsize=(12,12))
-ax3 = fig3.add_subplot(111)
-
-flux_cut = flux_dummy[wavelength_dummy >= geslines_synth[0][0]]
-wavelength_cut = wavelength_dummy[wavelength_dummy >= geslines_synth[0][0]]
-
-flux_cut = flux_cut[wavelength_cut <= geslines_synth[len(geslines_synth)-1][1]]
-wavelength_cut = wavelength_cut[wavelength_cut <= geslines_synth[len(geslines_synth)-1][1]]
-
-ax3.plot(wavelength_cut,flux_cut,linestyle='-',color='dodgerblue')
-
-N_cols = len(geslines_synth)
-
-from matplotlib.pyplot import cm
-
-colours_list = cm.rainbow_r(np.linspace(0,1,N_cols))
-
-for seg_windows in range(len(geslines_synth)):
-    
-    # for each window, plot an opaque zone 
-    
-    # param_fill_range = np.linspace(geslines_synth[seg_windows][0],geslines_synth[seg_windows][1],10)
-    
-    ax3.axvline(x=geslines_synth[seg_windows][0],color='tomato',linestyle='--',alpha=0.5)
-    ax3.axvline(x=geslines_synth[seg_windows][1],color='tomato',linestyle='--',alpha=0.5)
-
-    # ax3.fill_between(param_fill_range, min(flux_cut), max(flux_cut), color=colours_list[seg_windows],alpha=0.5)
-
-
-# ax3.set_xlim([min(wavelength_cut),max(wavelength_cut)])
-
-ax3.set_xlim([6250,max(wavelength_cut)])
-
-
-ax3.set_ylim([min(flux_cut),max(flux_cut)])
-
-ax3.set_ylabel("Flux",fontsize=45)
-ax3.set_xlabel("Wavelength [$\AA$]",fontsize=45)
-
-plt.rcParams["font.family"] = "Times New Roman"
-
-plt.rcParams['axes.linewidth'] = 2.5
-
-plt.rcParams['xtick.labelsize'] = 30
-plt.rcParams['ytick.labelsize'] = 30
-
-max_wavelength_cut_value = max(wavelength_cut)
-
-title = filename.replace("_","").split(".txt")[0]
-
-
-# plt.show()
-fig3.savefig(f"{title}_segment_example_6250_{max_wavelength_cut_value}.png",dpi=100)
-# plt.savefig(f"{title}_sigclipped.pdf",dpi=100)
-''
-
-
-
-# flux_sigclip = sigclip(flux,2.5)
-
+# wavelength_normalised_stitch = spec_norm_results[0]
+# flux_normalised_stitch = spec_norm_results[1]
+# error_flux_normalised_stitch = spec_norm_results[2]
+# continuum_stitch = spec_norm_results[3]
+# geslines_synth = spec_norm_results[4]
 
 ### PLOTTING ### 
 '''
+fig = plt.figure(figsize=(18,12))
+ax1 = fig.add_subplot(211)
+ax2 = fig.add_subplot(212)
 
-fig = plt.figure(figsize=(10,10))
+ax1.plot(wavelength,flux,'r-',label='un-normalised flux')
+ax2.plot(wavelength_normalised_stitch,flux_normalised_stitch,'k-',label='normalised flux')
+ax2.plot(wavelength_normalised_stitch,continuum_stitch,'b-',label='continuum')
+ax2.plot(wavelength_normalised_stitch,error_flux_normalised_stitch,'g-',label='error')
 
-# fig = plt.figure(figsize=(18,12))
-# ax1 = fig.add_subplot(211)
-# ax2 = fig.add_subplot(212)
+ax2.set_ylim([0,2])
 
-ax1 = fig.add_subplot(111)
+ax1.set_ylabel("Flux")
+ax2.set_ylabel("Flux")
 
+ax2.set_xlabel("Wavelength [$\AA$]")
 
-
-ax1.plot(wavelength,flux,'r-',label='pre-clipped flux',linewidth=2)
-ax1.plot(wavelength,flux_sigclip,'k-',label='clipped flux',linewidth=2)
-
-# ax2.plot(wavelength_normalised_stitch,flux_normalised_stitch,'k-',label='normalised flux',linewidth=2)
-# ax2.plot(wavelength_normalised_stitch,continuum_stitch,'b-',label='continuum')
-# ax2.plot(wavelength_normalised_stitch,error_flux_normalised_stitch,'g-',label='error',linewidth=2)
-
-# ax2.set_ylim([0,2])
-
-ax1.set_ylabel("Flux",fontsize=35)
-
-ax1.set_xlabel("Wavelength [$\AA$]",fontsize=35)
-
-
-# ax2.set_ylabel("Flux",fontsize=35)
-
-# ax2.set_xlabel("Wavelength [$\AA$]",fontsize=35)
-
-ax1.legend(loc="lower right",fontsize=30)
-# ax2.legend(loc="upper right",fontsize=30)
-
-ax1.set_xlim([6060,6072])
-
-
-# ax1.set_xlim([5328,5345])
-# ax2.set_xlim([5328,5345])
+ax1.legend(loc="upper left")
+ax2.legend(loc="upper left")
 
 title = filename.replace("_","").split(".txt")[0]
-ax1.set_title(f"{title}",fontsize=35)
-
-# ax2.set_xticks(fontsize=25)
-# ax2.set_yticks(fontsize=25)
-
-# axins = ax2.inset_axes([6250,6500,1,2])
-# axins = zoomed_inset_axes(ax2, 1, loc=2) # zoom-factor: 2.5, location: upper-left
-# axins.plot(wavelength_normalised_stitch[0], flux_normalised_stitch[0],'k-')
-# x1, x2, y1, y2 = 5328, 5340, 0, 1.5 # specify the limits
-# axins.set_xlim(x1, x2) # apply the x-limits
-# axins.set_ylim(y1, y2) # apply the y-limits
-# plt.yticks(visible=False)
-# plt.xticks(visible=False)
-# mark_inset(ax2, axins, loc1=2, loc2=4, fc="none", ec="0.5")
-
-# flux_gap = flux_normalised_stitch[wavelength_normalised_stitch<=5345]
-# wavelength_gap = wavelength_normalised_stitch[wavelength_normalised_stitch<=5345]
-# flux_gap = flux_gap[wavelength_gap>=5328]
-# wavelength_gap = wavelength_gap[wavelength_gap>=5328]
-# plt.plot(wavelength_gap,flux_gap,'k-',markersize=0.5)
-# plt.setp(axes, yticks=[])
-
-
-plt.rcParams["font.family"] = "Times New Roman"
-
-plt.rcParams['axes.linewidth'] = 2.5
-
-plt.rcParams['xtick.labelsize'] = 30
-plt.rcParams['ytick.labelsize'] = 30
+ax1.set_title(f"{title}")
 
 plt.show()
-
-# plt.savefig(f"{title}_sigclipped.pdf",dpi=100)
-
-# plt.savefig(f"{title}_cont_norm.eps",dpi=100)
-# plt.savefig(f"{title}_cont_norm_zoom.eps",dpi=100)
-
 '''
