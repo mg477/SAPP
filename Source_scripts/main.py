@@ -1695,7 +1695,7 @@ Ref_data = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_params.txt",
 6 ; err [Fe/H] [dex]
 """
 
-Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_params.txt",delimiter=",",dtype=str)
+Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_params.txt",delimiter=",",dtype=str)
 
 """
 0 ; source_id (Literature name of the star)
@@ -1720,7 +1720,7 @@ emask_kw_instrument = "HARPS" # can be "HARPS" or "UVES"
 emask_kw_teff = "solar" # can be "solar","teff_varying"
 error_mask_recreate_bool = False # if this is set to True, then emask_kw_teff defaults to "stellar"
 error_mask_recreate_arr = [error_mask_recreate_bool,emask_kw_instrument,emask_kw_teff]
-error_map_use_bool = True
+error_map_use_bool = False
 cont_norm_bool = False
 rv_shift_recalc = [False,-100,100,0.05]
 conv_instrument_bool = False
