@@ -1299,6 +1299,14 @@ def find_best_val(ind_spec_arr):
         usert = np.interp(w0_new,wvl_corrected,usert)
         wvl_corrected = np.interp(w0_new,wvl_corrected,wvl_corrected)
         
+        ## process zeros in error ##
+        
+        # if zero, make them the nominal error i.e.
+        # err = flux/SNR
+        
+        usert[usert==0] = obs[usert==0]/snr_star
+
+        
         if error_map_use_bool == True:
             
             if error_mask_recreate_bool == True:
