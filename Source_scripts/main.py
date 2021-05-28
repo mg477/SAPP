@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 import time
 from scipy.optimize import curve_fit
 from scipy.stats import iqr as IQR_SCIPY
-from scipy import interpolate as INTERP
 ### import SAPP scripts
 
 import os
@@ -110,23 +109,9 @@ def spectroscopy_stellar_track_collect(inp_arr):
     inp_index = inp_arr[0] # index in ref. to star list
     
     best_fit_spectroscopy = inp_arr[1] # best fit spec params initial guess
-    
-    chi_2_red_bool = inp_arr[2] # if True, reduce the chi2, if False, do other normalisation
-    
+        
     spec_save_extension = inp_arr[3]
-    
-    
-    import_path = "../Input_data/spectroscopy_model_data/Payne_input_data/"
-    
-    name="NN_results_RrelsigN20.npz"#NLTE NN trained spectra grid results
-    
-    temp=np.load(import_path+name)
-    
-    x_min = temp["x_min"] # minimum limits of grid
-    x_max = temp["x_max"] # maximum limits of grid
-    
-    print(f"stellar_names[inp_index]")
-    
+        
     stellar_filename = stellar_names[inp_index].replace(" ","_")
     
     ### load photometry, asteroseismology stellar tracks
@@ -145,28 +130,16 @@ def spectroscopy_stellar_track_collect(inp_arr):
     best_params_err = best_fit_spectroscopy[1]
 
     cov_matrix = best_fit_spectroscopy[2]
-
     
     # ch2_best = best_fit_spectroscopy[4] # chi-square of best fit results
     # wvl_con = best_fit_spectroscopy[5] # wavelength of spectra post processing
     # wvl_obs_input = best_fit_spectroscopy[9] # original wavelength of obs spectra
     # obs_norm = best_fit_spectroscopy[6] # observation flux normalised
-    # err_norm = best_fit_spectroscopy[10] # err of observation flux normalised
-
+    # err_norm = best_fit_spectroscopy[10] # err of observation flux normalise
     
     # cov_matrix = best_fit_spectroscopy[11] # covariance matrix
     
-    
-    cov_matrix_new = cov_matrix[1:]
-    
-    cov_matrix_new = np.vstack((cov_matrix_new[:,1],\
-                                cov_matrix_new[:,2],\
-                                cov_matrix_new[:,3],\
-                                cov_matrix_new[:,4],\
-                                cov_matrix_new[:,5],\
-                                cov_matrix_new[:,6],\
-                                cov_matrix_new[:,7],\
-                                cov_matrix_new[:,8])).T
+    cov_matrix_new = cov_matrix[1:,1:] # need to remove the 1st row and 1st column (with current NN package, these are useless) 
         
     corr_matrix = correlation_from_covariance(cov_matrix_new) # correlation matrix
     
@@ -188,85 +161,32 @@ def spectroscopy_stellar_track_collect(inp_arr):
     MgFe = params_fix[2] # magnesium abundance
         
     print("NUMBER OF POINTS",len(teff_phot))
-    
-    chi2_spec_w_phot = []
-    
-    # this is calculating chi2 directly from model-obs space
-    
-    # ch2_spec_arr = []
-    
-    # this is calculating chi2 between spec best params and stellar tracks
-    
-    ch2_spec_second_arr = []
-    
-    # this is the above but taking into account covariance between the primary parameters
-    
-    ch2_spec_third_arr = []
+        
+    chi2_spec_third_arr = []
     
     start_time_spec_tracks = time.time()
-    
+
+    feh_de_enhance = feh_phot - (0.22/0.4 * MgFe)
+    chi2_teff_i = (((best_params[0]*1000)-teff_phot)/(best_params_err[0]*1000))**2
+    chi2_logg_i = (((best_params[1])-logg_phot)/(best_params_err[1]))**2
+    chi2_feh_i = (((best_params[2])-feh_phot)/(best_params_err[2]))**2
+    chi2_spec_second_arr = chi2_teff_i + chi2_logg_i + chi2_feh_i
+
     for test_index in range(len(feh_phot)):
-        
-        # feh_stellar = feh_spec + (0.22/0.4 * MgFe)
-        
-        # feh_test are feh values from stellar tracks
-        
-        # need to de-enhance them first, then pass to spec
-        
-        ### first type of chi2
-        ### creates chi2 grid sampling spectroscopy space directly
-        
-        feh_de_enhance = feh_phot[test_index] - (0.22/0.4 * MgFe) # Serenelli (in conversation)
-    
-        # spec_fix_values = [teff_test[test_index]/1000,logg_test[test_index],feh_de_enhance]
-    
-        # params_inp_new = np.hstack(([spec_fix_values[0],\
-        #                              spec_fix_values[1],\
-        #                              feh_de_enhance],params_fix))
-            
-        # params_norm_new = (params_inp_new-x_min)/(x_max-x_min)-0.5 # normalises parameters to 'Payne' values
-            
-        # model_norm_loop = mspec_new.restore(wvl_obs_input,*params_norm_new)
-        
-        # chi2_spec = np.sum(((obs_norm-model_norm_loop)/err_norm)**2)
-        
-        # ch2_spec_arr.append(chi2_spec)
-        
-        ### second type of chi2        
-        ### creates chi2 grid sampling photometry space with best fit spec values
-        
-        chi2_teff_i = (((best_params[0]*1000)-teff_phot[test_index])/(best_params_err[0]*1000))**2
-        chi2_logg_i = (((best_params[1])-logg_phot[test_index])/(best_params_err[1]))**2
-        chi2_feh_i = (((best_params[2])-feh_phot[test_index])/(best_params_err[2]))**2
-        chi2_spec_second = chi2_teff_i + chi2_logg_i + chi2_feh_i
-        
-        ch2_spec_second_arr.append(chi2_spec_second)
-        
         ### third type of chi2
         ### creates chi2 grid sampling photometry space with best fit spec values while including co-variance
-        
-        diff_vector = np.array([teff_phot[test_index]-(best_params[0]*1000),logg_phot[test_index]-best_params[1],feh_de_enhance-best_params[2]])
-        
+
+        diff_vector = np.array([teff_phot[test_index]-(best_params[0]*1000),logg_phot[test_index]-best_params[1],feh_de_enhance[test_index]-best_params[2]])
+
         product_1 = np.matmul(diff_vector,cov_matrix_norm_inv)
-        
+
         chi2_spec_third = np.matmul(product_1,diff_vector.T)
-            
-        ch2_spec_third_arr.append(chi2_spec_third)
 
-    
-    # ch2_spec_arr = np.array(ch2_spec_arr)
-    ch2_spec_second_arr = np.array(ch2_spec_second_arr)
-    ch2_spec_third_arr = np.array(ch2_spec_third_arr)
+        chi2_spec_third_arr.append(chi2_spec_third)
 
-    for combine_index_loop in range(len(ch2_spec_second_arr)):
-        
-            # prob_spec_w_test.append(np.hstack((param_space_test[combine_index_loop],prob_spec_norm[combine_index_loop],prob_spec_norm_second[combine_index_loop])))
-            
-            # prob_spec_w_test.append(np.hstack((param_space_test[combine_index_loop],ch2_spec_arr[combine_index_loop],ch2_spec_second_arr[combine_index_loop],ch2_spec_third_arr[combine_index_loop])))
-            
-            chi2_spec_w_phot.append(np.hstack((param_space_phot[combine_index_loop],ch2_spec_second_arr[combine_index_loop],ch2_spec_third_arr[combine_index_loop])))
+    chi2_spec_third_arr = np.array(chi2_spec_third_arr)
 
-    chi2_spec_w_phot = np.array(chi2_spec_w_phot)
+    chi2_spec_w_phot = np.vstack([param_space_phot.T,chi2_spec_second_arr,chi2_spec_third_arr]).T
                                 
     print(f"time elapsed --- {(time.time() - start_time_spec_tracks)/60} minutes ---")
     
@@ -431,32 +351,20 @@ def main_func_multi_obs(inp_index_arr):
             if phot_ast_central_values_bool == False:
             
                 phot_ast_central_values = [best_spec_params[0]*1000,best_spec_params[1],best_spec_params[2]]
-                
+                                
             elif phot_ast_central_values_arr == True:
                 
                 phot_ast_central_values = [phot_ast_central_values_arr[0],phot_ast_central_values_arr[1],phot_ast_central_values_arr[2]]
     
             stellar_inp_phot = [stellar_names[inp_index],phot_ast_central_values,phot_ast_limits]
                     
-            start_time_phot = time.time()
-            
-            start_phot = time.time()    
-            photometry_ast(stellar_inp_phot)
-            print(f"Photometry and Asteroseismology calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_phot)/60} minutes --- ")    
-        
-            print(f"photometry time = {time.time()-start_time_phot}")
-        
             if spec_obs_number == 0:
+            
+                start_time_phot = time.time()
                 
-                # this is because there is no point creating a photometry space for multiple spectra
-                # the spaces will be very similar in extent
-                # the only time this fails is if we have a bad spectra
-                # so in blind mode this makes sense as it can be very inconsistent
-                # but because the search range in photometry space is so large
-                # just create it once for the first observation
-                # you only need one set of central limits decided by spectroscopy.
-                
-                break
+                start_phot = time.time()    
+                photometry_ast(stellar_inp_phot)
+                print(f"Photometry and Asteroseismology calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_phot)/60} minutes --- ")    
 
         if spec_track_bool == True:
             
@@ -1050,6 +958,18 @@ def prob_distributions_1D(Parameter,Probability,Param_name,Param_binwidth,prob_i
     
     return [mu_fit,sigma_fit]
 
+def chkList(lst):
+    if len(lst) < 0 :
+        res = True
+    res = all(ele == lst[0] for ele in lst)
+      
+    if(res):
+        eql_check = True
+    else:
+        eql_check = False
+        
+    return eql_check 
+
 def Log_prob_distributions_1D(Parameter,Probability,Param_name,Param_binwidth,prob_input_name,param_filename,makefig_bool,savefig_bool,stellar_id,chisq_red_bool,savefig_extra_name):
        
     
@@ -1063,291 +983,49 @@ def Log_prob_distributions_1D(Parameter,Probability,Param_name,Param_binwidth,pr
     # Parameter = Parameter_zero_clean
     # Probability = Probability_zero_clean
     
-    data_entries, bins = np.histogram(Parameter, bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),weights=Probability)
+    ###
+    # what if the probability given is all 1's?
+    # should I just never use it therefore no requirement?
+    # but this could happen with photometry e.g. NaN bands
+    # so, what do I do?
+    # return np.nan? 
+    # okay yes do that
+    ###
     
-    binscenters = np.array([0.5 * (bins[i] + bins[i+1]) for i in range(len(bins)-1)])
+    eql_check = chkList(Probability)
     
-    binscenters_zero_clean = binscenters[np.where(data_entries!=0.0)[0]]    
-    data_entries_zero_clean = data_entries[np.where(data_entries!=0.0)[0]]
+    if eql_check:
         
-    data_entries = data_entries_zero_clean
-    binscenters = binscenters_zero_clean
+        if param_filename == "age":
+        
+            return [np.nan,np.nan,np.nan,np.nan]
     
-    peak_data = max(data_entries)            
-    parameter_peak_loc = binscenters[np.where(data_entries==peak_data)[0]][0]
-    
-    buffer = 1e-5
-    
-    if parameter_peak_loc>0:
-        
-        peak_loc_min = (1-buffer) * parameter_peak_loc
-        
-        peak_loc_max = (1+buffer) * parameter_peak_loc
-        
-    elif parameter_peak_loc < 0:
-
-        peak_loc_min = (1+buffer) * parameter_peak_loc
-        
-        peak_loc_max = (1-buffer) * parameter_peak_loc
-        
-    log_peak_data = np.log(peak_data)
-    
-    log_peak_data_min = np.log((1-buffer) * peak_data)
-    
-    log_data_entries = np.log(data_entries)
-    
-    
-    if param_filename == "age":
-        
-        ### need to take care of PMS ages that pop up
-        
-        PMS_break = 1 #Gyr
-        
-        data_entries_PMS = data_entries[binscenters<PMS_break]
-        data_entries_MS = data_entries[binscenters>=PMS_break]        
-        
-        binscenters_PMS = binscenters[binscenters<PMS_break]
-        binscenters_MS = binscenters[binscenters>=PMS_break]
-        
-        if len(data_entries_PMS) == 0:
-            
-            peak_data_PMS = data_entries_MS[0]
-            parameter_peak_loc_PMS = min(binscenters_MS)
-            peak_loc_PMS_min = (1-buffer) * parameter_peak_loc_PMS
-            peak_loc_PMS_max = (1+buffer) * parameter_peak_loc_PMS
-            
         else:
-        
-            peak_data_PMS = max(data_entries_PMS)
-            parameter_peak_loc_PMS = binscenters_PMS[np.where(data_entries_PMS==peak_data_PMS)[0]][0]
-            peak_loc_PMS_min = (1-buffer) * parameter_peak_loc_PMS
-            peak_loc_PMS_max = (1+buffer) * parameter_peak_loc_PMS
             
-        if len(data_entries_MS) == 0:
-            
-            peak_data_MS = data_entries_PMS[len(data_entries_PMS)-1]
-            parameter_peak_loc_MS = max(binscenters_PMS)
-            peak_loc_MS_min = (1-buffer) * parameter_peak_loc_MS
-            peak_loc_MS_max = (1+buffer) * parameter_peak_loc_MS
-            
-        else:
-
-            peak_data_MS = max(data_entries_MS)
-            parameter_peak_loc_MS = binscenters_MS[np.where(data_entries_MS==peak_data_MS)[0]][0]
-            peak_loc_MS_min = (1-buffer) * parameter_peak_loc_MS
-            peak_loc_MS_max = (1+buffer) * parameter_peak_loc_MS
+            return [np.nan,np.nan]
         
-        log_peak_data_PMS = np.log(peak_data_PMS)        
-        log_peak_data_PMS_min = np.log((1-buffer)*peak_data_PMS)
-        
-        log_peak_data_MS = np.log(peak_data_MS)        
-        log_peak_data_MS_min = np.log((1-buffer)*peak_data_MS)
-                
-                    
-    try:
-        
-            if param_filename == "age":   
-                
-                popt, pcov = curve_fit(fit_function_quad_bimodal, 
-                                       xdata=binscenters, 
-                                       ydata=log_data_entries, 
-                                       p0=[log_peak_data_PMS, 
-                                           parameter_peak_loc_PMS, 
-                                           Param_binwidth, 
-                                           log_peak_data_MS, 
-                                           parameter_peak_loc_MS, 
-                                           Param_binwidth],
-                                       bounds=((log_peak_data_PMS_min,
-                                                 peak_loc_PMS_min,
-                                                 1e-5*Param_binwidth,
-                                                 log_peak_data_MS_min,
-                                                 peak_loc_MS_min,
-                                                 1e-5*Param_binwidth),       
-                                                (log_peak_data_PMS,
-                                                 peak_loc_PMS_max,
-                                                 1e1*Param_binwidth,
-                                                 log_peak_data_MS,
-                                                 peak_loc_MS_max,
-                                                 1e1*Param_binwidth)))
-   
-
-                # giving only the 2nd peak, what about fitting the first? 
-
-                # well we always pick the 2nd one anyways, couldn't come up with anything otherwise
-
-                # means the bimodal stuff was a waste in time
-
-                # I can't seem to get it working at all!
-
-                # hwo do I stop the computer from rounding down?                                                                                                                                                                               
-
-                # popt, pcov = curve_fit(fit_function_quad, xdata=binscenters, ydata=log_data_entries, p0=[log_peak_data_MS, parameter_peak_loc_MS, Param_binwidth],bounds=((log_peak_data_MS_min,peak_loc_MS_min,1e-5*Param_binwidth),(log_peak_data_MS,peak_loc_MS_max,1e2*Param_binwidth)))
-
-                
-            else: 
-        
-            # popt, pcov = curve_fit(fit_function_quad, xdata=binscenters, ydata=log_data_entries, p0=[log_peak_data, parameter_peak_loc, Param_binwidth],bounds=((min(np.log(data_entries)),min(Parameter),1e-5*Param_binwidth),(log_peak_data,max(Parameter),1e2*Param_binwidth)))
-            
-                popt, pcov = curve_fit(fit_function_quad, xdata=binscenters, ydata=log_data_entries, p0=[log_peak_data, parameter_peak_loc, Param_binwidth],bounds=((log_peak_data_min,peak_loc_min,1e-5*Param_binwidth),(log_peak_data,peak_loc_max,1e2*Param_binwidth)))
-                        
-            suc=True
-                                            
-    except RuntimeError:
-            
-            if param_filename == "age":
-                
-                popt=np.ones([6])
-                
-            else: 
-                
-                popt=np.ones([3])
-
-            popt*=np.nan
-            
-            suc=False
-
-
-        
-    if param_filename == "age":
-    
-        mu_fit = popt[1]
-        sigma_fit = popt[2]
-        
-        mu_fit_2 = popt[4]
-        sigma_fit_2 = popt[5]
-        
-        # print([peak_data_PMS, parameter_peak_loc_PMS, Param_binwidth,peak_data_MS,parameter_peak_loc_MS,Param_binwidth])
-        # print([popt[0],popt[1],popt[2],popt[3],popt[4],popt[5]])
-        
-        fitted_params = [mu_fit,sigma_fit,mu_fit_2,sigma_fit_2]
-    
     else:
-        
-        mu_fit = popt[1]
-        sigma_fit = popt[2]
-
-        fitted_params = [mu_fit,sigma_fit]
     
-    if makefig_bool == True:
-    
-        xspace = np.linspace(min(Parameter),max(Parameter),1000)
-                        
-        fig_prob_1d = plt.figure(figsize=(12,12))
-        
-        ax_1d = fig_prob_1d.add_subplot(111)
-        
-        ax_1d.hist(Parameter,bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),weights=Probability,density=False,label=f'Bin width = {Param_binwidth:.2f}',alpha=0.5,histtype='stepfilled',color='tomato',edgecolor='k')
-        
-        if suc == True:
-        
-            if param_filename == "temperature":
-            
-                ax_1d.plot(xspace, np.exp(fit_function_quad(xspace, *popt)), color='blue', linewidth=2.5, label=r'$\mu$ = ' + f'{mu_fit:.0f}\n' + r'$\sigma$ = ' + f'{sigma_fit:.0f}\n')
-
-            elif param_filename == "age":
-                
-                ax_1d.plot(xspace, np.exp(fit_function_quad_bimodal(xspace, *popt)), color='blue', linewidth=2.5, label=r'$\mu$ = ' + f'{mu_fit:.3f}\n' + r'$\sigma$ = ' + f'{sigma_fit:.3f}\n\n' + r'$\mu_2$ = ' + f'{mu_fit_2:.3f}\n' + r'$\sigma_2$ = ' + f'{sigma_fit_2:.3f}\n')        
-            
-            else:
-                
-                ax_1d.plot(xspace, np.exp(fit_function_quad(xspace, *popt)), color='blue', linewidth=2.5, label=r'$\mu$ = ' + f'{mu_fit:.3f}\n' + r'$\sigma$ = ' + f'{sigma_fit:.3f}\n')        
-        
-        if suc == False:
-            
-            print("Fitting failed, change bin size")
-        
-        ax_1d.set_ylabel('Probability')
-        # ax_1d.set_ylabel('Counts')
-        ax_1d.set_xlabel(f'{Param_name}')
-        
-        # hist, bins = np.histogram(Parameter,weights=Probability)
-        
-        # Gauss_prob = normpdf(Parameter,np.average(Parameter),Param_binwidth)
-                
-        # ax_1d.hist(Parameter,bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),density=False,label=f'Bin width = {Param_binwidth}',alpha=1,histtype='stepfilled')
-    
-        # ax_1d.bar(Parameter, Probability, width=0.08, bottom=None)
-    
-        ax_1d.legend(loc='upper right',fontsize=20)
-        
-        ax_1d.set_xlim([min(Parameter),max(Parameter)])
-        
-        # ax_1d.set_yscale("log")
-                
-        ax_1d.set_ylim(ymin=0)
-        
-        prob_title_name = prob_input_name.replace("_"," ").replace("w","x")
-        
-        plt.title(f"{prob_title_name}")
-        
-        plt.show()
-        
-        if savefig_bool == True:
-            
-            directory_figures= stellar_id # name of directory is the name of the star
-            directory_check = os.path.exists(f"../Output_figures/1d_distributions/{directory_figures}")
-            
-            if  directory_check == True:
-                
-                pass
-                
-            else:
-                
-                print(f"../Output_figures/1d_distributions/{directory_figures} directory does not exist")
-                
-                os.makedirs(f"../Output_figures/1d_distributions/{directory_figures}")
-                
-                print(f"../Output_figures/1d_distributions/{directory_figures} directory has been created")
-                    
-            if chisq_red_bool == False:
-            
-                fig_prob_1d.savefig(f"../Output_figures/1d_distributions/{stellar_id}/{prob_input_name}_vs_{param_filename}_{stellar_id}_no_norm_covariance_log_fit{savefig_extra_name}.png")
-
-            elif chisq_red_bool == True:
-            
-                fig_prob_1d.savefig(f"../Output_figures/1d_distributions/{stellar_id}/{prob_input_name}_vs_{param_filename}_{stellar_id}_norm_covariance_log_fit{savefig_extra_name}.png")
-        
-        plt.close('all')
-        
-    return fitted_params
-    
-    return [mu_fit,sigma_fit]
-
-def Log_multiple_prob_distributions_1D(Parameter,Probability_arr,Param_name,Param_binwidth,prob_input_name_arr,param_filename,makefig_bool,savefig_bool,stellar_id,chisq_red_bool,col_arr,extra_name):
-       
-    
-    """
-    Need to cut the data down and get rid of any zero regions which waste time
-    """
-    
-    fig_prob_1d = plt.figure(figsize=(12,12))
-            
-    ax_1d = fig_prob_1d.add_subplot(111)
-        
-    for Prob_index in range(len(Probability_arr)):
-        
-        Probability = Probability_arr[Prob_index]
-        prob_input_name = prob_input_name_arr[Prob_index]
-    
-        Parameter_zero_clean = Parameter[np.where(Probability!=0.0)[0]]
-        Probability_zero_clean = Probability[np.where(Probability!=0.0)[0]]
-                
-        # Parameter = Parameter_zero_clean
-        # Probability = Probability_zero_clean
-        
         data_entries, bins = np.histogram(Parameter, bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),weights=Probability)
+        # data_entries, bins = np.histogram(Parameter, bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)))
+              
+        # plt.hist(data_entries,bins)
+        # plt.hist(Parameter, bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)))
         
         binscenters = np.array([0.5 * (bins[i] + bins[i+1]) for i in range(len(bins)-1)])
         
         binscenters_zero_clean = binscenters[np.where(data_entries!=0.0)[0]]    
         data_entries_zero_clean = data_entries[np.where(data_entries!=0.0)[0]]
-        
+            
         data_entries = data_entries_zero_clean
         binscenters = binscenters_zero_clean
         
         peak_data = max(data_entries)            
         parameter_peak_loc = binscenters[np.where(data_entries==peak_data)[0]][0]
-                
+        
+        # print("DATA",data_entries)
+        # print("PEAK DATA",peak_data)
+        
         buffer = 1e-5
         
         if parameter_peak_loc>0:
@@ -1381,12 +1059,298 @@ def Log_multiple_prob_distributions_1D(Parameter,Probability_arr,Param_name,Para
             binscenters_PMS = binscenters[binscenters<PMS_break]
             binscenters_MS = binscenters[binscenters>=PMS_break]
             
-            peak_data_PMS = max(data_entries_PMS)
+            if len(data_entries_PMS) == 0:
+                
+                peak_data_PMS = data_entries_MS[0]
+                parameter_peak_loc_PMS = min(binscenters_MS)
+                peak_loc_PMS_min = (1-buffer) * parameter_peak_loc_PMS
+                peak_loc_PMS_max = (1+buffer) * parameter_peak_loc_PMS
+                
+            else:
+            
+                peak_data_PMS = max(data_entries_PMS)
+                parameter_peak_loc_PMS = binscenters_PMS[np.where(data_entries_PMS==peak_data_PMS)[0]][0]
+                peak_loc_PMS_min = (1-buffer) * parameter_peak_loc_PMS
+                peak_loc_PMS_max = (1+buffer) * parameter_peak_loc_PMS
+                
+            if len(data_entries_MS) == 0:
+                
+                peak_data_MS = data_entries_PMS[len(data_entries_PMS)-1]
+                parameter_peak_loc_MS = max(binscenters_PMS)
+                peak_loc_MS_min = (1-buffer) * parameter_peak_loc_MS
+                peak_loc_MS_max = (1+buffer) * parameter_peak_loc_MS
+                
+            else:
+    
+                peak_data_MS = max(data_entries_MS)
+                parameter_peak_loc_MS = binscenters_MS[np.where(data_entries_MS==peak_data_MS)[0]][0]
+                peak_loc_MS_min = (1-buffer) * parameter_peak_loc_MS
+                peak_loc_MS_max = (1+buffer) * parameter_peak_loc_MS
+            
+            log_peak_data_PMS = np.log(peak_data_PMS)        
+            log_peak_data_PMS_min = np.log((1-buffer)*peak_data_PMS)
+            
+            log_peak_data_MS = np.log(peak_data_MS)        
+            log_peak_data_MS_min = np.log((1-buffer)*peak_data_MS)
+                    
+                        
+        try:
+            
+                if param_filename == "age":   
+                    
+                    popt, pcov = curve_fit(fit_function_quad_bimodal, 
+                                           xdata=binscenters, 
+                                           ydata=log_data_entries, 
+                                           p0=[log_peak_data_PMS, 
+                                               parameter_peak_loc_PMS, 
+                                               Param_binwidth, 
+                                               log_peak_data_MS, 
+                                               parameter_peak_loc_MS, 
+                                               Param_binwidth],
+                                           bounds=((log_peak_data_PMS_min,
+                                                     peak_loc_PMS_min,
+                                                     1e-5*Param_binwidth,
+                                                     log_peak_data_MS_min,
+                                                     peak_loc_MS_min,
+                                                     1e-5*Param_binwidth),       
+                                                    (log_peak_data_PMS,
+                                                     peak_loc_PMS_max,
+                                                     1e1*Param_binwidth,
+                                                     log_peak_data_MS,
+                                                     peak_loc_MS_max,
+                                                     1e1*Param_binwidth)))
+       
+    
+                    # giving only the 2nd peak, what about fitting the first? 
+    
+                    # well we always pick the 2nd one anyways, couldn't come up with anything otherwise
+    
+                    # means the bimodal stuff was a waste in time
+    
+                    # I can't seem to get it working at all!
+    
+                    # hwo do I stop the computer from rounding down?                                                                                                                                                                               
+    
+                    # popt, pcov = curve_fit(fit_function_quad, xdata=binscenters, ydata=log_data_entries, p0=[log_peak_data_MS, parameter_peak_loc_MS, Param_binwidth],bounds=((log_peak_data_MS_min,peak_loc_MS_min,1e-5*Param_binwidth),(log_peak_data_MS,peak_loc_MS_max,1e2*Param_binwidth)))
+    
+                    
+                else: 
+            
+                # popt, pcov = curve_fit(fit_function_quad, xdata=binscenters, ydata=log_data_entries, p0=[log_peak_data, parameter_peak_loc, Param_binwidth],bounds=((min(np.log(data_entries)),min(Parameter),1e-5*Param_binwidth),(log_peak_data,max(Parameter),1e2*Param_binwidth)))
+                
+                    popt, pcov = curve_fit(fit_function_quad, xdata=binscenters, ydata=log_data_entries, p0=[log_peak_data, parameter_peak_loc, Param_binwidth],bounds=((log_peak_data_min,peak_loc_min,1e-5*Param_binwidth),(log_peak_data,peak_loc_max,1e2*Param_binwidth)))
+                            
+                suc=True
+                                                
+        except RuntimeError:
+                
+                if param_filename == "age":
+                    
+                    popt=np.ones([6])
+                    
+                else: 
+                    
+                    popt=np.ones([3])
+    
+                popt*=np.nan
+                
+                suc=False
+    
+    
+            
+        if param_filename == "age":
+        
+            mu_fit = popt[1]
+            sigma_fit = popt[2]
+            
+            mu_fit_2 = popt[4]
+            sigma_fit_2 = popt[5]
+            
+            # print([peak_data_PMS, parameter_peak_loc_PMS, Param_binwidth,peak_data_MS,parameter_peak_loc_MS,Param_binwidth])
+            # print([popt[0],popt[1],popt[2],popt[3],popt[4],popt[5]])
+            
+            fitted_params = [mu_fit,sigma_fit,mu_fit_2,sigma_fit_2]
+        
+        else:
+            
+            mu_fit = popt[1]
+            sigma_fit = popt[2]
+    
+            fitted_params = [mu_fit,sigma_fit]
+        
+        if makefig_bool == True:
+        
+            xspace = np.linspace(min(Parameter),max(Parameter),1000)
+                            
+            fig_prob_1d = plt.figure(figsize=(12,12))
+            
+            ax_1d = fig_prob_1d.add_subplot(111)
+            
+            ax_1d.hist(Parameter,bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),weights=Probability,density=False,label=f'Bin width = {Param_binwidth:.2f}',alpha=0.5,histtype='stepfilled',color='tomato',edgecolor='k')
+            
+            if suc == True:
+            
+                if param_filename == "temperature":
+                
+                    ax_1d.plot(xspace, np.exp(fit_function_quad(xspace, *popt)), color='blue', linewidth=2.5, label=r'$\mu$ = ' + f'{mu_fit:.0f}\n' + r'$\sigma$ = ' + f'{sigma_fit:.0f}\n')
+    
+                elif param_filename == "age":
+                    
+                    ax_1d.plot(xspace, np.exp(fit_function_quad_bimodal(xspace, *popt)), color='blue', linewidth=2.5, label=r'$\mu$ = ' + f'{mu_fit:.3f}\n' + r'$\sigma$ = ' + f'{sigma_fit:.3f}\n\n' + r'$\mu_2$ = ' + f'{mu_fit_2:.3f}\n' + r'$\sigma_2$ = ' + f'{sigma_fit_2:.3f}\n')        
+                
+                else:
+                    
+                    ax_1d.plot(xspace, np.exp(fit_function_quad(xspace, *popt)), color='blue', linewidth=2.5, label=r'$\mu$ = ' + f'{mu_fit:.3f}\n' + r'$\sigma$ = ' + f'{sigma_fit:.3f}\n')        
+            
+            if suc == False:
+                
+                print("Fitting failed, change bin size")
+            
+            ax_1d.set_ylabel('Probability')
+            # ax_1d.set_ylabel('Counts')
+            ax_1d.set_xlabel(f'{Param_name}')
+            
+            # hist, bins = np.histogram(Parameter,weights=Probability)
+            
+            # Gauss_prob = normpdf(Parameter,np.average(Parameter),Param_binwidth)
+                    
+            # ax_1d.hist(Parameter,bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),density=False,label=f'Bin width = {Param_binwidth}',alpha=1,histtype='stepfilled')
+        
+            # ax_1d.bar(Parameter, Probability, width=0.08, bottom=None)
+        
+            ax_1d.legend(loc='upper right',fontsize=20)
+            
+            ax_1d.set_xlim([min(Parameter),max(Parameter)])
+            
+            ax_1d.set_yscale("log")
+                    
+            ax_1d.set_ylim(ymin=0)
+            
+            prob_title_name = prob_input_name.replace("_"," ").replace("w","x")
+            
+            plt.title(f"{prob_title_name}")
+            
+            plt.show()
+            
+            if savefig_bool == True:
+                
+                directory_figures= stellar_id # name of directory is the name of the star
+                directory_check = os.path.exists(f"../Output_figures/1d_distributions/{directory_figures}")
+                
+                if  directory_check == True:
+                    
+                    pass
+                    
+                else:
+                    
+                    print(f"../Output_figures/1d_distributions/{directory_figures} directory does not exist")
+                    
+                    os.makedirs(f"../Output_figures/1d_distributions/{directory_figures}")
+                    
+                    print(f"../Output_figures/1d_distributions/{directory_figures} directory has been created")
+                        
+                if chisq_red_bool == False:
+                
+                    fig_prob_1d.savefig(f"../Output_figures/1d_distributions/{stellar_id}/{prob_input_name}_vs_{param_filename}_{stellar_id}_no_norm_covariance_log_fit{savefig_extra_name}.png")
+    
+                elif chisq_red_bool == True:
+                
+                    fig_prob_1d.savefig(f"../Output_figures/1d_distributions/{stellar_id}/{prob_input_name}_vs_{param_filename}_{stellar_id}_norm_covariance_log_fit{savefig_extra_name}.png")
+            
+            plt.close('all')
+            
+        return fitted_params
+    
+def Log_multiple_prob_distributions_1D(Parameter,Probability_arr,Param_name,Param_binwidth,prob_input_name_arr,param_filename,makefig_bool,savefig_bool,stellar_id,chisq_red_bool,col_arr,extra_name,ref_param,ref_param_err):
+       
+    
+    """
+    Need to cut the data down and get rid of any zero regions which waste time
+    """
+    
+    fig_prob_1d = plt.figure(figsize=(12,12))
+            
+    ax_1d = fig_prob_1d.add_subplot(111)
+        
+    for Prob_index in range(len(Probability_arr)):
+        
+        Probability = Probability_arr[Prob_index]
+        prob_input_name = prob_input_name_arr[Prob_index]
+        
+        eql_check = chkList(Probability)
+        
+        if eql_check:
+            
+            continue
+                
+        # Parameter_zero_clean = Parameter[np.where(Probability!=0.0)[0]]
+        # Probability_zero_clean = Probability[np.where(Probability!=0.0)[0]]
+
+        # print(np.where(np.isnan(Probability)==False)[0])
+
+        # Parameter_nan_clean = Parameter[np.where(np.isnan(Probability)==False)[0]]
+        # Probability_nan_clean = Probability[np.where(np.isnan(Probability)==False)[0]]
+
+                
+        # Parameter = Parameter_zero_clean
+        # Probability = Probability_zero_clean
+        
+        # Parameter = Parameter_nan_clean
+        # Probability = Probability_nan_clean
+        
+        
+        data_entries, bins = np.histogram(Parameter, bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),weights=Probability)
+        
+        binscenters = np.array([0.5 * (bins[i] + bins[i+1]) for i in range(len(bins)-1)])
+        
+        binscenters_zero_clean = binscenters[np.where(data_entries!=0.0)[0]]    
+        data_entries_zero_clean = data_entries[np.where(data_entries!=0.0)[0]]
+    
+        data_entries = data_entries_zero_clean
+        binscenters = binscenters_zero_clean
+                
+        peak_data = np.nanmax(data_entries)            
+        parameter_peak_loc = binscenters[np.where(data_entries==peak_data)[0]][0]
+                        
+        buffer = 1e-5
+        
+        if parameter_peak_loc>0:
+            
+            peak_loc_min = (1-buffer) * parameter_peak_loc
+            
+            peak_loc_max = (1+buffer) * parameter_peak_loc
+            
+        elif parameter_peak_loc < 0:
+    
+            peak_loc_min = (1+buffer) * parameter_peak_loc
+            
+            peak_loc_max = (1-buffer) * parameter_peak_loc
+            
+        log_peak_data = np.log(peak_data)
+        
+        log_peak_data_min = np.log((1-buffer) * peak_data)
+        
+        log_data_entries = np.log(data_entries)
+        
+        
+        if param_filename == "age":
+            
+            ### need to take care of PMS ages that pop up
+            
+            PMS_break = 1 #Gyr
+            
+            data_entries_PMS = data_entries[binscenters<PMS_break]
+            data_entries_MS = data_entries[binscenters>=PMS_break]        
+            
+            binscenters_PMS = binscenters[binscenters<PMS_break]
+            binscenters_MS = binscenters[binscenters>=PMS_break]
+            
+            peak_data_PMS = np.nanmax(data_entries_PMS)
             parameter_peak_loc_PMS = binscenters_PMS[np.where(data_entries_PMS==peak_data_PMS)[0]][0]
             peak_loc_PMS_min = (1-buffer) * parameter_peak_loc_PMS
             peak_loc_PMS_max = (1+buffer) * parameter_peak_loc_PMS
     
-            peak_data_MS = max(data_entries_MS)
+            peak_data_MS = np.nanmax(data_entries_MS)
             parameter_peak_loc_MS = binscenters_MS[np.where(data_entries_MS==peak_data_MS)[0]][0]
             peak_loc_MS_min = (1-buffer) * parameter_peak_loc_MS
             peak_loc_MS_max = (1+buffer) * parameter_peak_loc_MS
@@ -1520,14 +1484,26 @@ def Log_multiple_prob_distributions_1D(Parameter,Probability_arr,Param_name,Para
     # ax_1d.hist(Parameter,bins=int(abs((max(Parameter)-min(Parameter))/Param_binwidth)),density=False,label=f'Bin width = {Param_binwidth}',alpha=1,histtype='stepfilled')
 
     # ax_1d.bar(Parameter, Probability, width=0.08, bottom=None)
-
-    ax_1d.legend(loc='upper right',fontsize=20)
     
-    ax_1d.set_xlim([min(Parameter),max(Parameter)])
+    if param_filename == "temperature" or param_filename == "feh" or param_filename == "feh_spec":
+    
+        ax_1d.set_xlim([min(Parameter),max(Parameter)])
+        
+        ax_1d.axvline(x = ref_param,linestyle='-',color='grey',linewidth=2,label='Ref.')
+        ax_1d.axvspan(ref_param - ref_param_err, ref_param + ref_param_err, alpha=0.15, color='lightgrey')
+        
+    # ax_1d.axvline(x = ref_param - ref_param_err,linestyle='-',color='grey',linewidth=2)
+    # ax_1d.axvline(x = ref_param + ref_param_err,linestyle='-',color='grey',linewidth=2)
     
     # ax_1d.set_yscale("log")
+
+    ax_1d.legend(loc='upper right',fontsize=20)
+
             
     ax_1d.set_ylim(ymin=0)
+
+    ax_1d.set_xlim([min(xspace),max(xspace)])
+
     
     prob_title_name = prob_input_name.replace("_"," ").replace("w","x")
     
@@ -1535,6 +1511,7 @@ def Log_multiple_prob_distributions_1D(Parameter,Probability_arr,Param_name,Para
     ax_1d.tick_params(axis='both',which='major',labelsize=35)
     
     # plt.title(f"{prob_title_name}")
+    plt.title(stellar_id)
     
     plt.show()
     
@@ -1695,7 +1672,7 @@ Ref_data = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_params.txt",
 6 ; err [Fe/H] [dex]
 """
 
-Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_params.txt",delimiter=",",dtype=str)
+Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_params .txt",delimiter=",",dtype=str)
 
 """
 0 ; source_id (Literature name of the star)
