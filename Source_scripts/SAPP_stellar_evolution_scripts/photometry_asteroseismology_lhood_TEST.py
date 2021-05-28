@@ -917,11 +917,11 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_wide.txt',Like_tot_param_space,delimiter=",") 
     # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_EXTRA_wide.txt',Like_tot_param_space,delimiter=",") 
     # 
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3.txt',Like_tot_param_space,delimiter=",") 
+    np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3.txt',Like_tot_param_space,delimiter=",") 
     # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_non_stellar_evo_priors.txt',Like_tot_param_space,delimiter=",") 
 
     # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_ast_NaN.txt',Like_tot_param_space,delimiter=",") 
-    np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_4.txt',Like_tot_param_space,delimiter=",") 
+    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_4.txt',Like_tot_param_space,delimiter=",") 
 
     
     # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/luminosity_{stellar_id}_test_3.txt',Like_tot_param_space,delimiter=",") 

@@ -290,7 +290,8 @@ def main_func_multi_obs(inp_index_arr):
                     recalc_metals_bool,\
                     recalc_metals_inp,\
                     logg_fix_bool,\
-                    logg_fix_input_arr],stellar_names[inp_index],spec_type]
+                    logg_fix_input_arr,\
+                    [unique_emask_params_bool,unique_emask_params]],stellar_names[inp_index],spec_type]
 
         if best_spec_bool == True:
                 
@@ -1672,7 +1673,7 @@ Ref_data = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_params.txt",
 6 ; err [Fe/H] [dex]
 """
 
-Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_params .txt",delimiter=",",dtype=str)
+Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_params.txt",delimiter=",",dtype=str)
 
 """
 0 ; source_id (Literature name of the star)
@@ -1710,6 +1711,11 @@ logg_fix_bool = False
 
 spec_fix_values = [5770,4.44,0]
 
+unique_emask_params_bool = False
+unique_emask_params = [5777,4.44,0,1,1.6,0,0,0] # solar example 
+
+
+
 ### photometry grid limits
 
 Teff_resolution = 250 # K
@@ -1722,9 +1728,9 @@ phot_ast_central_values_arr = [5900,4,0] # these values are at the centre of the
 chi_2_red_bool = False
 
 best_spec_bool = True 
-phot_ast_track_bool = False
-spec_track_bool = False
-bayes_scheme_bool = False
+phot_ast_track_bool = True
+spec_track_bool = True
+bayes_scheme_bool = True
 
 
 ### naming conventions for the settings above
