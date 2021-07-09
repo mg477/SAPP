@@ -675,12 +675,19 @@ def RV_multi_template(wvl,
     based on three templates 
     
     """
-    
+
     # print("=====================")
     # print("SOLAR RV")
                 
-    model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0])                  
-    
+    model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0])             # this is for hr10 NN Mikhail trained
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN Jeff trained        
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for RVS NN Mikhail trained        
+
+    # plt.plot(model_wvl,model_flux)   
+    # plt.show()
+    # plt.close('all')
+
+
     ## in this case the model wvl range will not be always larger than the observed
     ## this means to interpolate the obs to the model wvl range, you need to make sure
     ## that wvl obs is within the range of the model
@@ -720,13 +727,66 @@ def RV_multi_template(wvl,
         
     # now we have to do this again with two other templates 
 
+    ### Solar star METAL POOR RV TEMPLATE ###
+    # check the abundances with Maria
+
+    model_wvl,model_flux = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8])             # this is for hr10 NN Mikhail trained
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN Jeff trained        
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for RVS NN Mikhail trained        
+
+    # plt.plot(model_wvl,model_flux)   
+    # plt.show()
+    # plt.close('all')
+
+
+    ## in this case the model wvl range will not be always larger than the observed
+    ## this means to interpolate the obs to the model wvl range, you need to make sure
+    ## that wvl obs is within the range of the model
+    ## as the model will not exist outside its own range, you should NOT extrapolate the model
+    ## therefore, you must cut the obs in both ends just in case, only the obs, do not worry about the model
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min,\
+                                                          rv_max,\
+                                                          drv,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)            
+
+        
+    # fab, now grab that rough RV value, redo this and choose a range around that
+    
+    rv_min_focus = rv_shift - 2 # km/s
+    rv_max_focus = rv_shift + 2 # km/s
+    drv_focus = 0.05 # km/s
+    
+    rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
+                                                          [model_wvl,model_flux],\
+                                                          rv_min_focus,\
+                                                          rv_max_focus,\
+                                                          drv_focus,\
+                                                          title="",\
+                                                          savefig_bool=False,\
+                                                          Resolution=spec_resolution,
+                                                          Resolution_convolve = False)
+    
+    solar_poor_chi2 = chi2_rv
+    solar_poor_rv = rv_shift
+    solar_poor_rv_err = drv_focus
+        
+
+
     ### RGB solar metallicty RV TEMPLATE ###
 
     # print("=====================")
     # print("RGB solar [Fe/H] RV")
 
                 
-    model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,1,1,0,0,0])                  
+    model_wvl,model_flux = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0])                  # this is for hr10 NN Mikhail trained 
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1])                  # this is for RVS NN Jeff trained 
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0])                  # this is for RVS NN Mikhail trained 
     
     ## in this case the model wvl range will not be always larger than the observed
     ## this means to interpolate the obs to the model wvl range, you need to make sure
@@ -771,7 +831,9 @@ def RV_multi_template(wvl,
     # print("=====================")
     # print("RGB poor [Fe/H] RV")
                 
-    model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,1,1,-0.2,-0.2,-0.8])                  
+    model_wvl,model_flux = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8])          # this is for hr10 NN Mikhail trained         
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8,1,1,1])          # this is for RVS NN Jeff trained      
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8])          # this is for RVS NN Mikhail trained      
     
     ## in this case the model wvl range will not be always larger than the observed
     ## this means to interpolate the obs to the model wvl range, you need to make sure
@@ -810,10 +872,10 @@ def RV_multi_template(wvl,
     rgb_mp_rv = rv_shift
     rgb_mp_rv_err = drv_focus
 
-    chi2_results = [solar_chi2,rgb_chi2,rgb_mp_chi2]
-    rv_results = [solar_rv,rgb_rv,rgb_mp_rv]
-    rv_err_results = [solar_rv_err,rgb_rv_err,rgb_mp_rv_err]
-
+    chi2_results = [solar_chi2,solar_poor_chi2,rgb_chi2,rgb_mp_chi2]
+    rv_results = [solar_rv,solar_poor_rv,rgb_rv,rgb_mp_rv]
+    rv_err_results = [solar_rv_err,solar_poor_rv,rgb_rv_err,rgb_mp_rv_err]
+    
     chi2_best = min(chi2_results)
 
     rv_best = rv_results[np.argsort(chi2_results)[0]]
@@ -821,6 +883,7 @@ def RV_multi_template(wvl,
     rv_err_best = rv_err_results[np.argsort(chi2_results)[0]]    
     
     return rv_best,rv_err_best
+
 
 
 def read_fits_GES_GIR_spectra(path):
