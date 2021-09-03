@@ -1700,7 +1700,7 @@ error_mask_recreate_bool = False # if this is set to True, then emask_kw_teff de
 error_mask_recreate_arr = [error_mask_recreate_bool,emask_kw_instrument,emask_kw_teff]
 error_map_use_bool = False
 cont_norm_bool = False
-rv_shift_recalc = [False,-100,100,0.05]
+rv_shift_recalc = [False,-400,400,0.5]
 conv_instrument_bool = False
 input_spec_resolution = 20000
 numax_iter_bool = False
@@ -1728,9 +1728,9 @@ phot_ast_central_values_arr = [5900,4,0] # these values are at the centre of the
 chi_2_red_bool = False
 
 best_spec_bool = True 
-phot_ast_track_bool = True
-spec_track_bool = True
-bayes_scheme_bool = True
+phot_ast_track_bool = False
+spec_track_bool = False
+bayes_scheme_bool = False
 
 
 ### naming conventions for the settings above
