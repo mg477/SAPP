@@ -504,20 +504,26 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
     if Resolution_convolve == True:
     
         spec_template_wvl,spec_template_flux = convolve_python(spec_template_wvl, spec_template_flux, Resolution)
-            
+                    
     drvs = np.arange(rv_min,rv_max+drv,drv)
     
     cc = np.zeros(len(drvs))
     
+    ch2_cc = np.zeros(len(drvs))
+    
     # Speed of light in km/s
     c = 299792.458
     
-    obs_cut = obs.copy()
-    wvl_cut = wvl.copy()
-    usert_cut = usert.copy()
+    # obs_cut = obs.copy()
+    # wvl_cut = wvl.copy()
+    # usert_cut = usert.copy()
         
     for i,rv in enumerate(drvs):
-        
+
+        obs_cut = obs.copy()
+        wvl_cut = wvl.copy()
+        usert_cut = usert.copy()
+
         spec_template_wvl_doppler_shift = spec_template_wvl*(1.0 + rv/c)
         
         fi = sci.interp1d(spec_template_wvl_doppler_shift, spec_template_flux)
@@ -544,9 +550,17 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
         cc[i] = np.sum(obs_cut * fi(wvl_cut)) # is this the literal definition of CC, where's the fourier transform?
         
         
+        chi2_rv_arr_i = (fi(wvl_cut) - obs_cut)**2/usert_cut ** 2
+
+        no_inf_index_i = np.isfinite(chi2_rv_arr_i)
+        
+        chi2_rv_arr_clean_i = chi2_rv_arr_i[no_inf_index_i]
+        
+        ch2_cc[i] = np.nansum(chi2_rv_arr_clean_i/(len(chi2_rv_arr_clean_i)-8)) # 8 dimensions, duh
+        
     # Find the index of maximum cross-correlation function
     max_ind = np.argmax(cc)
-    
+        
     ### calc chi2 i.e. how good is the fit?
         
     spec_template_wvl_doppler_shift = spec_template_wvl*(1.0 + drvs[max_ind]/c)
@@ -576,13 +590,20 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
     chi2_rv_arr_clean = chi2_rv_arr[no_inf_index]
     
     chi2_rv = np.nansum(chi2_rv_arr_clean/(len(chi2_rv_arr_clean)-8)) # 8 dimensions, duh
-        
+     
+    
+    
     ### RV plot ###
                 
     # title_filename = star_ids_bmk[ind_spec].split("_snr")[0] + "_snr" + star_ids_bmk[ind_spec].split("_snr")[1].split("_")[0]
-    
-    
+        
     if savefig_bool == True:
+
+        # print(drvs[max_ind],chi2_rv_arr_clean,chi2_rv)
+        
+        print("RV due to min chi2",drvs[np.argmin(ch2_cc)],ch2_cc[np.argmin(ch2_cc)])
+        print("RV due to max CC",drvs[max_ind],ch2_cc[max_ind])
+
             
         fig = plt.figure(figsize=(16,8))
         
@@ -592,6 +613,8 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
         ax1.plot(drvs,cc,'ko',markersize=0.5,label='$\Delta$ RV$_{max}$ ' + f'= {drvs[max_ind]:0.2f} Km/s')
         ax1.set_ylabel("CC ($\Delta$RV)",fontsize=30)
         ax1.set_xlabel("$\Delta$RV [Km/s]",fontsize=30)
+        
+        ax1.axvline(x=drvs[np.argmin(ch2_cc)],color='y',linestyle=':')
         
         if drvs[max_ind] > 0.0:
             
@@ -607,7 +630,7 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
         
         # convolve model down to hr10
                 
-        ax2.plot(spec_template_wvl,spec_template_flux,color='gray',linestyle='-',label='R5e5 Solar Model TS')
+        ax2.plot(spec_template_wvl,spec_template_flux,color='gray',linestyle='-',label='Spectral Template')
         ax2.plot(wvl,obs,color='k',linestyle='-',label = f'Obs')
         
         wvl_shift = RV_correction_vel_to_wvl_non_rel(wvl,drvs[max_ind])
@@ -628,7 +651,7 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
         plt.setp(ax1.spines.values(), linewidth=3)
         plt.setp(ax2.spines.values(), linewidth=3)
         
-        # plt.title(f'{title_filename} {star_spec_name} hr10 convolved')
+        plt.title(f'{title}')
         
         # plt.savefig(f"PLATO/rv_correction_figures/{star_spec_name}_{title_filename}_cross_correlation_rv_array.pdf",dpi=250) 
     
@@ -636,29 +659,33 @@ def rv_cross_corelation_no_fft(spec_obs,spec_template,rv_min,rv_max,drv,title,sa
         
         plt.show()
                         
-    return drvs[max_ind],drvs,cc,chi2_rv
+    # return drvs[max_ind],drvs,cc,chi2_rv
+    return drvs[np.argmin(ch2_cc)],drvs,cc,chi2_rv
 
-def star_model(wavelength,labels):
+def star_model(wavelength,labels,rv_shift):
     
     """
     takes wavelength and wanted stellar parameters, it spits out model you want
     """
     
-    wvl_min_bool = min(wavelength)
-    wvl_max_bool = max(wavelength)
+    wvl_min_bool = False#min(wavelength)
+    wvl_max_bool = False#max(wavelength)
     wvl_to_cut = [] # keep empty
     
     # convert parameters to normalised space 
 
     labels_norm = (labels-x_min)/(x_max-x_min)-0.5 
     
-    labels_inp = np.hstack(([0],labels_norm))
+    # labels_inp = np.hstack(([0],labels_norm))
+    # labels_inp = np.hstack((np.zeros([1+cheb]),labels_norm))
+    labels_inp = np.hstack((np.zeros([1]),labels_norm,np.zeros([cheb])))
     
-    wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,wvl_to_cut))
+    wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,rv_shift,wvl_to_cut))
 
-    model = restore1(wvl_obs_input,*labels_inp)
-    
+    model = restore1(wvl_obs_input,*labels_inp) # in this case, the model is convolved from hr21 to RVS, this is good? 
+
     return w0, model 
+
 
 
 def RV_multi_template(wvl,
@@ -672,16 +699,18 @@ def RV_multi_template(wvl,
     """
     This takes in a hr10 observation and rv initial limits to find the most likely rv
     
-    based on three templates 
+    based on four templates 
+    
+    
     
     """
 
     # print("=====================")
     # print("SOLAR RV")
                 
-    model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0])             # this is for hr10 NN Mikhail trained
-    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN Jeff trained        
-    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for RVS NN Mikhail trained        
+    model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0],0)             # this is for hr10 NN trained
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN trained        
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for 2ND RVS NN trained        
 
     # plt.plot(model_wvl,model_flux)   
     # plt.show()
@@ -699,7 +728,7 @@ def RV_multi_template(wvl,
                                                           rv_min,\
                                                           rv_max,\
                                                           drv,\
-                                                          title="",\
+                                                          title="SOLAR",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)            
@@ -716,7 +745,7 @@ def RV_multi_template(wvl,
                                                           rv_min_focus,\
                                                           rv_max_focus,\
                                                           drv_focus,\
-                                                          title="",\
+                                                          title="SOLAR",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)
@@ -730,9 +759,9 @@ def RV_multi_template(wvl,
     ### Solar star METAL POOR RV TEMPLATE ###
     # check the abundances with Maria
 
-    model_wvl,model_flux = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8])             # this is for hr10 NN Mikhail trained
-    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN Jeff trained        
-    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for RVS NN Mikhail trained        
+    model_wvl,model_flux = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8],0)             # this is for hr10 NN trained
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN trained        
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for 2ND RVS NN trained        
 
     # plt.plot(model_wvl,model_flux)   
     # plt.show()
@@ -750,7 +779,7 @@ def RV_multi_template(wvl,
                                                           rv_min,\
                                                           rv_max,\
                                                           drv,\
-                                                          title="",\
+                                                          title="SOLAR MP",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)            
@@ -767,7 +796,7 @@ def RV_multi_template(wvl,
                                                           rv_min_focus,\
                                                           rv_max_focus,\
                                                           drv_focus,\
-                                                          title="",\
+                                                          title="SOLAR MP",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)
@@ -784,9 +813,9 @@ def RV_multi_template(wvl,
     # print("RGB solar [Fe/H] RV")
 
                 
-    model_wvl,model_flux = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0])                  # this is for hr10 NN Mikhail trained 
-    # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1])                  # this is for RVS NN Jeff trained 
-    # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0])                  # this is for RVS NN Mikhail trained 
+    model_wvl,model_flux = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0],0)                  # this is for hr10 NN trained 
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1])                  # this is for RVS NN trained 
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0])                  # this is for 2nd RVS NN trained 
     
     ## in this case the model wvl range will not be always larger than the observed
     ## this means to interpolate the obs to the model wvl range, you need to make sure
@@ -799,7 +828,7 @@ def RV_multi_template(wvl,
                                                           rv_min,\
                                                           rv_max,\
                                                           drv,\
-                                                          title="",\
+                                                          title="RGB",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)            
@@ -816,7 +845,7 @@ def RV_multi_template(wvl,
                                                           rv_min_focus,\
                                                           rv_max_focus,\
                                                           drv_focus,\
-                                                          title="",\
+                                                          title="RGB",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)
@@ -831,9 +860,9 @@ def RV_multi_template(wvl,
     # print("=====================")
     # print("RGB poor [Fe/H] RV")
                 
-    model_wvl,model_flux = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8])          # this is for hr10 NN Mikhail trained         
-    # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8,1,1,1])          # this is for RVS NN Jeff trained      
-    # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8])          # this is for RVS NN Mikhail trained      
+    model_wvl,model_flux = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8],0)          # this is for hr10 NN trained         
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8,1,1,1])          # this is for RVS NN trained      
+    # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8])          # this is for 2nd RVS NN trained      
     
     ## in this case the model wvl range will not be always larger than the observed
     ## this means to interpolate the obs to the model wvl range, you need to make sure
@@ -846,7 +875,7 @@ def RV_multi_template(wvl,
                                                           rv_min,\
                                                           rv_max,\
                                                           drv,\
-                                                          title="",\
+                                                          title="RGB MP",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)            
@@ -863,7 +892,7 @@ def RV_multi_template(wvl,
                                                           rv_min_focus,\
                                                           rv_max_focus,\
                                                           drv_focus,\
-                                                          title="",\
+                                                          title="RGB MP",\
                                                           savefig_bool=False,\
                                                           Resolution=spec_resolution,
                                                           Resolution_convolve = False)
@@ -875,7 +904,7 @@ def RV_multi_template(wvl,
     chi2_results = [solar_chi2,solar_poor_chi2,rgb_chi2,rgb_mp_chi2]
     rv_results = [solar_rv,solar_poor_rv,rgb_rv,rgb_mp_rv]
     rv_err_results = [solar_rv_err,solar_poor_rv,rgb_rv_err,rgb_mp_rv_err]
-    
+
     chi2_best = min(chi2_results)
 
     rv_best = rv_results[np.argsort(chi2_results)[0]]
@@ -883,7 +912,6 @@ def RV_multi_template(wvl,
     rv_err_best = rv_err_results[np.argsort(chi2_results)[0]]    
     
     return rv_best,rv_err_best
-
 
 
 def read_fits_GES_GIR_spectra(path):
