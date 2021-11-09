@@ -14,6 +14,8 @@ import os
 import psutil
 import SAPP_spectroscopy.Payne.astro_constants_cgs as astroc
 from numba import jit
+# from IRFM_teff import IRFM_calc
+
 #from numba.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning, NumbaWarning
 #import warnings
 
@@ -50,15 +52,13 @@ def gaussian_one(var,mu,sigma):
     
     return g_one
     
-def distance_modulus(pax): 
+def distance_modulus(distance): 
     
     """
-    pax: parallax of star [mas]
+    distance: distance of star [pc]
     return: distance modulus
     purpose: calculate distance modulus using parallax
     """
-
-    distance = 10 ** 3/pax #for now, [pc] 
     
     dist_mod = 5 * np.log10(distance/10) # 10 is in parsecs
         
@@ -76,15 +76,39 @@ def Lhood_norm_red_chi_ind(var,mu,sigma,nu,N_k):
     
     return L_i 
 
+def DR2_GARSTEC_DR3_convert(G_DR2,Bp_DR2,Rp_DR2,Teff):
+    
+    """
+    The GARSTEC stellar evolution models from photometry_stellar_track_mmap.npy have Gaia DR2 photometry
+    and the Zero Points i.e. Solar Models haven't been corrected for. 
+    
+    This converter takes into account the corrections as well as converts DR2 --> DR3 within thousandths of a magnitude.
+    
+    This uses Teff from the models 
+    
+    'Note these transformations are very approximate, Note those transformations are very approximate, in a temperature range appropriate for the benchmark stars (but not giants), 
+    roughly Teff > 4500K. I tested for Fe/H range down to -1'
+    
+    Models need to be re-run in the future, better than having corrections.
+    """
+    
+    G_DR3 = G_DR2 -0.000001*(Teff-5000.) - 0.003
+
+    Bp_DR3 = Bp_DR2 +0.0000065*(Teff-5000.)
+    
+    Rp_DR3 = Rp_DR2 +0.0000028*(Teff-5000.) - 0.0146
+    
+    
+    return [G_DR3, Bp_DR3, Rp_DR3]
+
 #@jit
-def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_values,phot_ast_limits): 
+def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_values,phot_ast_limits,DM,sigma_DM,magnitude_set): 
     
     """
     mag_arr: input observed photometry array; [magnitudes,error,extinction]
     astrosize_arr: input observed asteroseismic array; [[delta_nu,nu_max],[delta_nu_err,nu_max_error]]
     colour_arr: input observed photometry array; [colours,error]
     pax: parallax [mas]
-    hbs_index_i: specific stellar evolution file string
     return: Three 3-D distribution of likelihoods for photometry, asteroseismology and combined of single star
     purpose: Takes in observational photometric data, asteroseismic data, parallax from Gaia and a file name string
     to calculate the likelihood function. This is done by loading up the model file line by line,
@@ -94,6 +118,8 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
     teff_central = spec_central_values[0]
     logg_central = spec_central_values[1]
     feh_central = spec_central_values[2]
+    
+    # print(teff_central,logg_central,feh_central)
     
     teff_limit = phot_ast_limits[0]
     logg_limit = phot_ast_limits[1]
@@ -105,7 +131,7 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
     mag_err = mag_arr[1] #  2 x 1D arrays containing error for magnitude observations of star in non-gaia and gaia
     non_gaia_mag_err = mag_err[0] # erH,erJ,erK,erV,erB 
     gaia_mag_err = mag_err[1] # erG,erBp,erRp
-        
+            
     col_obs = colour_arr[0] # 2 x 1D arrays containing colour observations for star in non-gaia: H-K,B-V,V-J,V-K and gaia: Bp-Rp,G-Rp
     non_gaia_col_obs = col_obs[0]
     gaia_col_obs = col_obs[1]
@@ -126,16 +152,38 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
     nu_phot_gaia_col = 1
     nu_ast = 1
 
+   # param_space = []
+   
     # The file has already been read.
     mask = (evoTrackArr[3]<teff_central+teff_limit)&(evoTrackArr[3]>teff_central-teff_limit)&\
            (evoTrackArr[6]<logg_central+logg_limit)&(evoTrackArr[6]>logg_central-logg_limit)&\
-           (evoTrackFeh<feh_central+feh_limit)&(evoTrackFeh>feh_central-feh_limit)   
-   
+           (evoTrackFeh<feh_central+feh_limit)&(evoTrackFeh>feh_central-feh_limit)&\
+           (evoTrackArr[0] > 30)&(evoTrackArr[0]/1000 <= 16)
+           # (evoTrackArr[0] > 30)&(evoTrackArr[0]/1000 <= 16)
+  
     FeH = evoTrackFeh[mask]
-                   
+                       
     ### Non-Gaia magnitudes ###
 
-    non_gaia_mag_model  = [evoTrackArr[27][mask],evoTrackArr[26][mask],evoTrackArr[28][mask],evoTrackArr[23][mask],evoTrackArr[22][mask]] # H,J,K,V,B
+    # non_gaia_mag_model = [float(x[27]),float(x[26]),float(x[28]),float(x[23]),float(x[22])] # H,J,K,V,B
+
+    ## OLD LARGE GARSTEC TRACKS ##    
+
+    non_gaia_mag_model  = [evoTrackArr[27][mask]+0.0047,
+                            evoTrackArr[26][mask]-0.0357,
+                            evoTrackArr[28][mask]-0.0414,
+                            evoTrackArr[23][mask]+0.0479,
+                            evoTrackArr[22][mask]+0.0497] # H,J,K,V,B
+
+    ## NEW SMALLER GARSTEC TRACKS ##
+
+    # non_gaia_mag_model  = [evoTrackArr[16][mask]+0.0047,
+    #                         evoTrackArr[15][mask]-0.0357,
+    #                         evoTrackArr[17][mask]-0.0414,
+    #                         evoTrackArr[12][mask]+0.0479,
+    #                         evoTrackArr[11][mask]+0.0497] # H,J,K,V,B
+
+    
     non_gaia_phot_var = non_gaia_mag_model # Gaussian input variable for non gaia magnitudes
     non_gaia_phot_sigma = non_gaia_mag_err # Assuming each factor has the same standard deviation
     N_non_gaia_phot = len(non_gaia_mag_model) # No. of gaussian factors for photometry
@@ -147,228 +195,211 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
         
     ### Gaia magnitudes ###
         
-    gaia_mag_model   = [evoTrackArr[34][mask],evoTrackArr[35][mask],evoTrackArr[36][mask]] # G,Bp,Rp
-    gaia_phot_var = gaia_mag_model # Gaussian input variable for gaia magnitudes 
-    gaia_phot_sigma = gaia_mag_err # Assuming each factor has the same standard deviation
-    N_gaia_phot = len(gaia_mag_model) # No. of gaussian factors for photometry
-    nu_gaia_phot = N_gaia_phot - d # degrees of freedom
+    # gaia_mag_model = [gaia_G_band_correction(float(x[34])),gaia_Bp_band_correction(float(x[35])),gaia_Rp_band_correction(float(x[36]))] # G,Bp,Rp
+    
+    # gaia_mag_model   = [gaia_G_band_correction(evoTrackArr[34][mask]),gaia_Bp_band_correction(evoTrackArr[35][mask]),gaia_Rp_band_correction(evoTrackArr[36][mask])] # G,Bp,Rp
+    # gaia_mag_model   = [evoTrackArr[34][mask],evoTrackArr[35][mask],evoTrackArr[36][mask]] # G,Bp,Rp
+    # gaia_mag_model  = [evoTrackArr[21][mask],evoTrackArr[22][mask],evoTrackArr[23][mask]] # G,Bp,Rp    
 
-    if nu_gaia_phot <= 0:
+    ## OLD LARGE GARSTEC TRACKS ##
+    
+    # gaia_mag_model  = [evoTrackArr[34][mask]+0.01,
+    #                    evoTrackArr[35][mask]+0.0201,
+    #                    evoTrackArr[36][mask]-0.0078] # G,Bp,Rp    
+
+    gaia_mag_model = DR2_GARSTEC_DR3_convert(evoTrackArr[34][mask],evoTrackArr[34][mask],evoTrackArr[34][mask],evoTrackArr[3][mask])
+
+    ## NEW SMALLER GARSTEC TRACKS ##
+
+    # gaia_mag_model  = [evoTrackArr[21][mask]+0.01,
+    #                     evoTrackArr[22][mask]+0.0201,
+    #                     evoTrackArr[23][mask]-0.0078] # G,Bp,Rp    
+                
+    # gaia_phot_var = gaia_mag_model # Gaussian input variable for gaia magnitudes 
+    gaia_phot_sigma = gaia_mag_err # Assuming each factor has the same standard deviation
+    # N_gaia_phot = len(gaia_mag_model) # No. of gaussian factors for photometry
+    # nu_gaia_phot = N_gaia_phot - d # degrees of freedom
+
+    # if nu_gaia_phot <= 0:
             
-        nu_gaia_phot = 1
+    #     nu_gaia_phot = 1
         
     ### Non-Gaia Colours ###
         
-    non_gaia_col_var = [non_gaia_mag_model[0]-non_gaia_mag_model[2],non_gaia_mag_model[4]-non_gaia_mag_model[3],non_gaia_mag_model[3]-non_gaia_mag_model[1],non_gaia_mag_model[3]-non_gaia_mag_model[2]] # H_K,B_V,V_J,V_K
-    non_gaia_col_sigma = non_gaia_col_err
-    N_non_gaia_phot_col = len(non_gaia_col_var) # No. of gaussian factors for photometry
-    nu_phot_non_gaia_col = N_non_gaia_phot_col - d # degrees of freedom
+    # non_gaia_col_var = [non_gaia_mag_model[0]-non_gaia_mag_model[2],non_gaia_mag_model[4]-non_gaia_mag_model[3],non_gaia_mag_model[3]-non_gaia_mag_model[1],non_gaia_mag_model[3]-non_gaia_mag_model[2]] # H_K,B_V,V_J,V_K
+    # non_gaia_col_sigma = non_gaia_col_err
+    # N_non_gaia_phot_col = len(non_gaia_col_var) # No. of gaussian factors for photometry
+    # nu_phot_non_gaia_col = N_non_gaia_phot_col - d # degrees of freedom
 
-    if nu_phot_non_gaia_col <= 0:
+    # if nu_phot_non_gaia_col <= 0:
             
-        nu_phot_non_gaia_col = 1
+    #     nu_phot_non_gaia_col = 1
         
     ### Gaia Colours ###
+    
+    ## corrections need to be applied to these 
 
-    gaia_col_var = [gaia_mag_model[1]-gaia_mag_model[2],gaia_mag_model[0]-gaia_mag_model[2],gaia_mag_model[1]-non_gaia_mag_model[2]] # Bp_Rp,G_Rp,Bp_K                
+    gaia_col_var = [gaia_mag_model[1]-gaia_mag_model[2],gaia_mag_model[0]-gaia_mag_model[2]] # Bp_Rp,G_Rp
+    # gaia_col_var = [gaia_mag_model[1]-gaia_mag_model[2],gaia_mag_model[0]-gaia_mag_model[2],gaia_mag_model[1]-non_gaia_mag_model[2]] # Bp_Rp,G_Rp,Bp_K                
     gaia_col_sigma = gaia_col_err
-    N_gaia_phot_col = len(gaia_col_var) # No. of gaussian factors for photometry
-    nu_phot_gaia_col = N_gaia_phot_col - d # degrees of freedom
+    # N_gaia_phot_col = len(gaia_col_var) # No. of gaussian factors for photometry
+    # nu_phot_gaia_col = N_gaia_phot_col - d # degrees of freedom
 
-    if nu_phot_gaia_col <= 0:
+    # if nu_phot_gaia_col <= 0:
             
-        nu_phot_gaia_col = 1
+    #     nu_phot_gaia_col = 1
         
     ### Asteroseismology ###
         
+    # nu_max_model = astroc.nu_max_sol * 10 ** (float(x[6]))/astroc.surf_grav_sol * (astroc.teff_sol/float(x[3])) ** 0.5
+    # delta_nu_model = float(x[16]) * astroc.delta_nu_sol/136.3 # 136.`3 uHz is Aldo's model solar value
     nu_max_model = astroc.nu_max_sol * 10 ** (evoTrackArr[6][mask])/astroc.surf_grav_sol * (astroc.teff_sol/evoTrackArr[3][mask]) ** 0.5
     delta_nu_model = evoTrackArr[16][mask] * astroc.delta_nu_sol/136.3 # 136.3 uHz is Aldo's model solar value
     ast_var = [delta_nu_model,nu_max_model]
     N_ast = len(ast_var)
-    nu_ast = N_ast-d # degrees of freedom 
+    # nu_ast = N_ast-d # degrees of freedom 
 
-    if nu_ast <= 0:
+    # if nu_ast <= 0:
             
-        nu_ast = 1
-                            
-    ev_shape = evoTrackArr[27][mask].shape
+    #     nu_ast = 1
+                        
+    # non_gaia_phot_like_line_sum = 0 # Initialisation of non-gaia photometric likelihood
+    # gaia_phot_like_line_sum = 0 # Initialisation of gaia photometric likelihood
+    # non_gaia_phot_col_like_line_sum = 0 # Initialisation of non-gaia photometric colour likelihood
+    # gaia_phot_col_like_line_sum = 0 # Initialisation of gaia photometric colour likelilhood
+    # ast_like_line_sum = 0 # Initialisation of asteroseismic likelihood
     
-    non_gaia_phot_like_line_sum = np.zeros(ev_shape) # Initialisation of non-gaia photometric likelihood
-    gaia_phot_like_line_sum = np.zeros(ev_shape) # Initialisation of gaia photometric likelihood
-    non_gaia_phot_col_like_line_sum = np.zeros(ev_shape) # Initialisation of non-gaia photometric colour likelihood
-    gaia_phot_col_like_line_sum = np.zeros(ev_shape) # Initialisation of gaia photometric colour likelilhood
-    ast_like_line_sum = np.zeros(ev_shape) # Initialisation of asteroseismic likelihood    
+    ### MODIFIED DM 
+    
+    # M_mod_j (for all points)
+    
+    # create a grid of DM values based on the central DM value
+    
+    DM_sigma_range = 8
+    DM_grid_num = 500
+    
+    # print("sigma DM",DM,sigma_DM)
+    
+    DM_grid = np.linspace(np.max([-5,DM-DM_sigma_range*sigma_DM]),DM+DM_sigma_range*sigma_DM,DM_grid_num) # this ensures the minimum DM is -5, sigma is currently hardcoded along with the steps
+    non_gaia_mag_model = np.array(non_gaia_mag_model)
+    if magnitude_set == 'all': # includes all photometric bands
+        mag_model  = np.vstack([non_gaia_mag_model,gaia_mag_model])
+        mag_obs    = np.hstack([non_gaia_mag_obs,gaia_mag_obs])
+        phot_sigma = np.hstack([non_gaia_phot_sigma,gaia_phot_sigma])
+    elif magnitude_set == 'gaia': # includes gaia bands only
+        mag_model  = np.array(gaia_mag_model)
+        mag_obs    = np.array(gaia_mag_obs)
+        phot_sigma = np.array(gaia_phot_sigma)
+    elif magnitude_set == 'non-gaia': # includes non-gaia bands only
+        mag_model  = np.array(non_gaia_mag_model)
+        mag_obs    = np.array(non_gaia_mag_obs)
+        phot_sigma = np.array(non_gaia_phot_sigma)
+    elif magnitude_set == 'gaia_col': # mix of gaia colours Bp-Rp, Bp-K, G-Rp
+        mag_model  = np.array(gaia_col_var)
+        mag_obs    = np.array(gaia_col_obs)
+        phot_sigma = np.array(gaia_col_sigma)
+        DM_grid    = np.zeros(2)
+        DM         = 0 
+    elif magnitude_set == 'gaia_bprp_col': # just Bp-Rp 
+        mag_model  = np.array(gaia_col_var[:1])
+        mag_obs    = np.array(gaia_col_obs[:1])
+        phot_sigma = np.array(gaia_col_sigma[:1])
+        DM_grid    = np.zeros(2)
+        DM         = 0 
+
+    
+    ## for this formulation, we can only do it using probabilities, not easy to do it for chisq due to nature of exponents
+    # for every point in the DM grid k, we calculate the probability for each band j which are summed
+
+    L_tot = []
+    for k in range(len(DM_grid)):
+        L  = np.array([ np.nansum([-(mag_obs[j] - DM_grid[k] - mag_model[j])**2/(2*(phot_sigma[j])**2) for j in range(len(mag_model))],axis=0) ]) - (DM_grid[k]-DM)**2/(2*sigma_DM**2)
+        L  = np.exp(L)
+        L_tot.append(L)
         
+    # This is now for a given model point i, a range of probabilities with a dimension in DM
+    # next we marginalise over the DM dimension by summing the probabilities in the DM axis
+    # N.B. should we multiply by the difference in DM? Its just a regular grid therefore shouldn't affect the shape
     
-    ### combining Gaussian factors for Non-Gaia magnitudes ###
+    L_phot  = np.nansum(np.array(L_tot),axis=0)[-1]  #*(DM_grid[1]-DM_grid[0]) 
     
-    for j_non_gaia_phot in range(0,N_non_gaia_phot): # Multiply gaussian factors assuming they are independent to each other
+    # normalise probability by the maximum value such that we get 1   
+
+    if len(L_phot) == 0:
+        
+        # raise PhotoSAPPError('Empty param space in photometry module detected.')
+        print('Empty param space in photometry module detected.')
+        
+        phot_flag = False
+
+        param_space = [] # added floats to here as numpy.save() was converting them into strings
+
+        return param_space,phot_flag
+    
+    else:
+ 
+        if np.max(L_phot) == 0.:
+            L_phot = np.ones(len(L_phot))
             
-        phot_non_gaia_mu = non_gaia_mag_obs[j_non_gaia_phot] # Gaussian mean, converting to absolute and de-reddening  
+        elif np.isnan(np.max(L_phot)): # for some reaosn we still get nans in this stage
+            L_phot = np.ones(len(L_phot))
+        
+        else:
+            L_phot /= np.max(L_phot)
+            
+        phot_flag = True
+             
+        # we're doing photometric band combination here because we marginalise afterwards, IF we create non-gaia and gaia separately then
+        # combine, we're effectively doubling the imapct of DM.
+        
+        # what do we do with the rest of the stuff below?
+        # these are the original formulations which contain the bug, so they should not be used at all
+        
+        # leave astroseismology, thats it 
+        
+        ev_shape = evoTrackArr[27][mask].shape
+        # ev_shape = evoTrackArr[16][mask].shape
+
+        ast_like_line_sum = np.zeros(ev_shape) # Initialisation of asteroseismic likelihood    
+            
+        ### combining Gaussian factors for Asteroseismology ###                    
+        for j_ast in range(0,N_ast): 
                 
-        if np.isnan(phot_non_gaia_mu) == True or np.isnan(non_gaia_phot_sigma[j_non_gaia_phot]):
-            continue
-        
-        else:
-        
-            non_gaia_phot_like_line_sum +=  chis_sq_one(non_gaia_phot_var[j_non_gaia_phot],phot_non_gaia_mu,non_gaia_phot_sigma[j_non_gaia_phot])  
-            
-            # print(i,non_gaia_phot_like_line_sum)
-
-    ### combining Gaussian factors for Non-Gaia colours ###
-
-    for j_non_gaia_col in range(0,N_non_gaia_phot_col):
-        
-        phot_non_gaia_col_mu = non_gaia_col_obs[j_non_gaia_col] # Gaussian mean, for colours distance modulus and extinction are assumed to cancel
-
-        if np.isnan(phot_non_gaia_col_mu) == True or np.isnan(non_gaia_col_sigma[j_non_gaia_col]):
-            continue
-        
-        else:
-
-            non_gaia_phot_col_like_line_sum += chis_sq_one(non_gaia_col_var[j_non_gaia_col],phot_non_gaia_col_mu,non_gaia_col_sigma[j_non_gaia_col])
+            ast_sigma = ast_err[j_ast]
+            ast_mu = ast_obs[j_ast]
     
-    
-    ### combining Gaussian factors for Gaia magnitudes ###
-
-    for j_gaia_phot in range(0,N_gaia_phot): # Multiply gaussian factors assuming they are independent to each other
-                                
-        phot_gaia_mu = gaia_mag_obs[j_gaia_phot] # Gaussian mean, converting to absolute and de-reddening  
-
-        if np.isnan(phot_gaia_mu) == True or np.isnan(gaia_phot_sigma[j_gaia_phot]):
-            continue
-        
-        else:
-        
-            gaia_phot_like_line_sum += chis_sq_one(gaia_phot_var[j_gaia_phot],phot_gaia_mu,gaia_phot_sigma[j_gaia_phot])
-
-    ### combining Gaussian factors for Gaia Colours ###
-    
-    for j_gaia_col in range(0,N_gaia_phot_col):
-
-        phot_gaia_col_mu = gaia_col_obs[j_gaia_col] # Gaussian mean, for colours distance modulus and extinction are assumed to cancel
-
-        if np.isnan(phot_gaia_col_mu) == True or np.isnan(gaia_col_sigma[j_gaia_col]):
-            continue
-        
-        else:
+            if np.isnan(ast_mu) == True or np.isnan(ast_sigma):
+                continue
             
-            # print("GAIA",gaia_col_var[j_gaia_col],phot_gaia_col_mu,gaia_col_sigma[j_gaia_col])
-        
-            gaia_phot_col_like_line_sum += chis_sq_one(gaia_col_var[j_gaia_col],phot_gaia_col_mu,gaia_col_sigma[j_gaia_col])
+            else:
     
-    ### combining Gaussian factors for Asteroseismology ###                    
-
-    for j_ast in range(0,N_ast): 
-            
-        ast_sigma = ast_err[j_ast]
-        ast_mu = ast_obs[j_ast]
-        
-        
-
-        if np.isnan(ast_mu) == True or np.isnan(ast_sigma):
-            continue
-        
-        else:
-            
-            # print("AST",ast_var[j_ast],ast_mu,ast_sigma)
-
-            ast_like_line_sum += chis_sq_one(ast_var[j_ast],ast_mu,ast_sigma)
-   
-   
-   
-   
-#                         # New param space Teff logg [Fe/H] Lhood_phot Lhood colour Lhood_ast Lhood_comb Age/Gyr M/Msol R/Rsol
+                ast_like_line_sum += chis_sq_one(ast_var[j_ast],ast_mu,ast_sigma)
                 
-    param_space = [evoTrackArr[3][mask],\
-                   evoTrackArr[6][mask],\
-                   FeH,\
-                   non_gaia_phot_like_line_sum,\
-                   gaia_phot_like_line_sum,\
-                   non_gaia_phot_col_like_line_sum,\
-                   gaia_phot_col_like_line_sum,\
-                   ast_like_line_sum,\
-                   evoTrackArr[0][mask]/1000.,\
-                   evoTrackArr[2][mask],\
-                   evoTrackArr[5][mask],\
-                   evoTrackArr[1][mask]/1000,\
-                   10**evoTrackArr[4][mask]] # added floats to here as numpy.save() was converting them into strings
-
-                # param_space.append(10 ** float(x[4]))
                 
-                # print(non_gaia_phot_like_line_sum,gaia_phot_like_line_sum,non_gaia_phot_col_like_line_sum,gaia_phot_col_like_line_sum)
-    param_space = np.array(param_space).T.copy()
-    if len(param_space) == 0:
-        raise PhotoSAPPError('Empty param space in photometry module detected.')
-    
-    ### change the degrees of freedom, just in case ###
-    # this is because for both colours and asteroseismology, we only want one variable 
-    
-    nu_phot_non_gaia_col = 1
-    nu_phot_gaia_col = 1
-    nu_ast = 1
-    
-    nu_dof_arr = [nu_non_gaia_phot,\
-                  nu_gaia_phot,\
-                  nu_phot_non_gaia_col,\
-                  nu_phot_gaia_col,\
-                  nu_ast]
+        # normalise asteroseismology here
         
-    nu_dof_arr = np.array(nu_dof_arr)
+        L_ast = np.exp(-(ast_like_line_sum - min(ast_like_line_sum))/2)
+           
+        param_space = [evoTrackArr[3][mask],\
+                       evoTrackArr[6][mask],\
+                       FeH,\
+                       L_phot,\
+                       L_ast,\
+                       evoTrackArr[0][mask]/1000.,\
+                       evoTrackArr[2][mask],\
+                       evoTrackArr[5][mask],\
+                       evoTrackArr[1][mask]/1000,\
+                       10**evoTrackArr[4][mask]] # added floats to here as numpy.save() was converting them into strings
+    
+        param_space = np.array(param_space).T.copy()
+        
+        # if len(param_space) == 0:
+        #     raise PhotoSAPPError('Empty param space in photometry module detected.')
             
-    return [param_space,nu_dof_arr]
-    
-def choose_star_photometry(stellar_id):
-    
-    """
-    stellar_id: stellar id name as a string,
-    return: photometry data from combined photometry file for specific star
-    """
-        
-    array = np.loadtxt('../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/PLATO_bmk_phot_data/PLATO_photometry.csv',dtype=str,delimiter=",")
+        return param_space, phot_flag
 
-    star = []
-       
-    for i in range(len(array)):
-        
-        if stellar_id == array[i][0]:
-            
-            star = array[i]
-            
-            break
-        
-        else:
-            
-            continue
-   
-    return star
 
-def choose_star_asteroseismology(stellar_id):
-    
-    """
-    stellar_id: stellar id name as a string,
-    return: photometry data from combined photometry file for specific star
-    """
-        
-    array = np.loadtxt('../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/PLATO_stars_seism.txt',dtype=str,delimiter=",")
-
-    star = []
-    
-    for i in range(len(array)):
-        
-        if stellar_id == array[i][0]:
-            
-            star = array[i]
-            
-            break
-        
-        else:
-            
-            continue
-
-   
-    return star
-
+    ''
 
 @jit    
 def gaia_G_band_correction(G):
@@ -377,7 +408,7 @@ def gaia_G_band_correction(G):
     G: G band apparent magnitude from Gaia DR2
     return: G_corr, the corrected magnitude
     """
-        
+    
     if G <= 2:
         
         G_corr = G # No correction specified for G <= 2
@@ -475,6 +506,8 @@ def extinction_multiple_bands(EBV,erEBV,Bp,Bp_err,Rp,Rp_err,G,G_err):
     Rg = 3.068 - 0.504 * Bp_Rp_0 + 0.053 * Bp_Rp_0 ** 2
     Rg_ERR = ((-0.504 + 2 * 0.053 * Bp_Rp_0) ** 2 * (Bp_Rp_0_ERR) ** 2) ** 0.5 
     A_G = Rg * EBV # check this, I don't think it should be E(B-V), should it?
+    
+    # print("A_G",A_G)
     err_A_G = ((EBV) ** 2 * (Rg_ERR) ** 2  +  (Rg) ** 2 * (extinction_err) ** 2) ** 0.5
 
     Rbp = 3.533 - 0.114 * Bp_Rp_0 - 0.219 * Bp_Rp_0 ** 2 + 0.07 * Bp_Rp_0 ** 3
@@ -507,7 +540,8 @@ def magnitude_converter(mag,DM,extinction):
     extinction: extinction in a certain band (corresponds to mag)
     """
     
-    absolute_mag = -(DM + extinction - mag)
+    # absolute_mag = -(DM + extinction - mag)
+    absolute_mag = -(extinction - mag)
     
     return absolute_mag
         
@@ -526,56 +560,88 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     phot_ast_central_values = stellar_inp[1]
     
     phot_ast_limits = stellar_inp[2]
-        
-    # chi_2_red_bool = stellar_inp[3]
     
+    star_field_name = stellar_inp[3]
+    
+    spec_obs_number = stellar_inp[4]
+    
+    magnitude_set = stellar_inp[5]
+    
+    save_phot_space_bool = stellar_inp[6]
+    
+    data_phot = stellar_inp[7]
+    
+    data_ast = stellar_inp[8]
+    
+    extra_save_string = stellar_inp[9]
+    
+                    
     mem = psutil.virtual_memory()
     threshhold = 0.8 * mem.total/2.**30/mp.cpu_count() # 80% of the total memory per core is noted as the "Threshold"
     
-    hbs_index = np.loadtxt('../Input_data/GARSTEC_stellar_evolution_models/models_list_new.txt',dtype='str')
-        
-    data_phot = choose_star_photometry(stellar_id) 
-    data_ast = choose_star_asteroseismology(stellar_id) 
-
-    # data_ast = np.array([stellar_id,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan],dtype=str)
-
-            
+    data_phot[data_phot==''] = np.nan # because empty means nan
+    data_ast[data_ast==''] = np.nan # because empty means nan
+                
     G_corr = gaia_G_band_correction(float(data_phot[1]))
     Bp_corr = gaia_Bp_band_correction(float(data_phot[3]))
     Rp_corr = gaia_Rp_band_correction(float(data_phot[5]))
-    
-    # data has the current order : [Stars, RA+DEC, Mik_index, Parallax, Parallax_err, delta_nu, delta_nu_err, nu_max, err_nu_max, H, erH, J, erJ, K, erK, V, erV, B, erB, G, erG, Bp, erBp, Rp, erRp, A_G, E(B-V)_SFD, Av_SFD, Av_S&F]
-    
-    star_name = data_phot[0]
-    
-    parallax = float(data_phot[7]) # paralax [mas] FROM Gaia
-    
-    parallax_err = float(data_phot[8]) # parallax [mas] error from Gaia
-    
-    parallax_err_fiducial = 0.2 * parallax # fiducial error for parallax is 20% i.e. the maximum we could use to keep doing d = 1/p 
-    
-    if np.isnan(parallax) == True:
         
-        parallax = float(data_phot[21]) # parallax from SIMBAD, sometimes there isn't a parallax (weird)
+    distance = float(data_phot[7]) # distance [pc] FROM Bailer-Jones 21
+    distance_err_upper = float(data_phot[8]) # distance upper error [pc] FROM Bailer-Jones 21
+    distance_err_lower = float(data_phot[9]) # distance lower error [pc] FROM Bailer-Jones 21
+    
+    
+    """
+    N.B. the lines below are valid only for the PLATO bmk eDR3 file, the GES DR4 for example does not contain parallaxes from SIMBAD.
+    
+    Bmk stars are a lil problematic only  because of how close and bright they are, these shouldn't be needed for the more distant
+    systems.
+
+    Order of this photometry file should be the same as the cluster one except for the extra parallax columns :) 
+    
+    """
+    
+    ''
+    if np.isnan(distance):
         
-        parallax_err = float(data_phot[22]) # parallax error from SIMBAD
+        # if distance from BJ 2021 is NaN, grab parallax from Gaia and do 1/pi
+        
+        # dividing by 1000 as parallax is presented in [mas] -- milliarcseconds
+        
+        # print(data_phot)
+        
+        parallax = float(data_phot[25])/1000 # from Gaia
+        parallax_err = float(data_phot[26])/1000 # from Gaia
+        
+        if np.isnan(parallax):
+            
+            # if parallax from Gaia is NaN, grab parallax from SIMBAD (probably HIP data)
+            
+            parallax = float(data_phot[27])/1000 # from SIMBAD 
+            parallax_err = float(data_phot[28])/1000 # from SIMBAD 
+            
+            # if these are still NaN, then lost cause, can't use magnitude, absolute mag will be NaN and therefore ignored by SAPP
+            
+        distance = 1/parallax
+        distance_err_upper = np.sqrt(abs(-1/parallax**2)**2 * parallax_err ** 2)
+        distance_err_lower = np.sqrt(abs(-1/parallax**2)**2 * parallax_err ** 2)
+    ''    
         
     ### EXTINCTION AND DISTANCE MODULUS APPLIED TO MAGNITUDES + COLOURS ###     
 
 #    magnitude_extinction = float(data[27]) # Av SFD # Just using Av for now, need to scale for other bands
     
-    magnitude_extinction_Gaia = float(data_phot[9]) # A_G queried from Gaia DR2, these sometimes do not exist 
+    magnitude_extinction_Gaia = np.nan#float(data_phot[10]) # A_G queried from Gaia DR2, these sometimes do not exist 
     
-    magnitude_reddening = float(data_phot[23]) # E(B-V)calculated from stilism
+    magnitude_reddening = float(data_phot[22]) # E(B-V)
     
-    magnitude_reddening_err_pos = float(data_phot[24])
-    magnitude_reddening_err_neg = float(data_phot[25])
+    magnitude_reddening_err_pos = float(data_phot[23]) # these could be zero
+    magnitude_reddening_err_neg = float(data_phot[24])
     
-    magnitude_reddening_err_ave = (magnitude_reddening_err_pos ** 2 + magnitude_reddening_err_neg ** 2) ** 0.5 # this is quadrature
+    # magnitude_reddening_err_ave = (magnitude_reddening_err_pos ** 2 + magnitude_reddening_err_neg ** 2) ** 0.5 # this is quadrature
 
-    # magnitude_reddening_err_ave = (magnitude_reddening_err_pos + magnitude_reddening_err_neg)/2 # this is average
+    magnitude_reddening_err_ave = (magnitude_reddening_err_pos + magnitude_reddening_err_neg)/2 # this is average
 
-    
     extinction_multiple_bands_arr = extinction_multiple_bands(magnitude_reddening,
                                                               magnitude_reddening_err_ave,
                                                               Bp_corr,
@@ -603,16 +669,16 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
         A_G = magnitude_extinction_Gaia
         A_Bp = magnitude_extinction_Gaia        
         A_Rp = magnitude_extinction_Gaia
-        
+
     extinction_bands_errors = extinction_multiple_bands_arr[1] # likewise for magnitudes
     
-    DM = distance_modulus(parallax) # distance modulus to convert magnitudes to absolute magnitudes 
-    
-    H_mag = magnitude_converter(float(data_phot[15]),DM,A_H)
-    J_mag = magnitude_converter(float(data_phot[17]),DM,A_J)
-    K_mag = magnitude_converter(float(data_phot[19]),DM,A_Ks)
-    V_mag = magnitude_converter(float(data_phot[13]),DM,A_vT)
-    B_mag = magnitude_converter(float(data_phot[11]),DM,A_BT)
+    DM = distance_modulus(distance) # distance modulus to convert magnitudes to absolute magnitudes 
+        
+    H_mag = magnitude_converter(float(data_phot[16]),DM,A_H)
+    J_mag = magnitude_converter(float(data_phot[18]),DM,A_J)
+    K_mag = magnitude_converter(float(data_phot[20]),DM,A_Ks)
+    V_mag = magnitude_converter(float(data_phot[14]),DM,A_vT)
+    B_mag = magnitude_converter(float(data_phot[12]),DM,A_BT)
     G_mag = magnitude_converter(G_corr,DM,A_G)
     Bp_mag = magnitude_converter(Bp_corr,DM,A_Bp)
     Rp_mag = magnitude_converter(Rp_corr,DM,A_Rp)
@@ -630,11 +696,15 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     G_Rp = gaia_magnitude_arr[0] -  gaia_magnitude_arr[2]
     
     Bp_K = gaia_magnitude_arr[1] - non_gaia_magnitude_arr[2] # Jeff recommended to add this
-    
-    non_gaia_magnitude_err_arr = [float(data_phot[16]),float(data_phot[18]),float(data_phot[19]),float(data_phot[14]),float(data_phot[12])] # This has erH,erJ,erK,erV,erB
+    Rp_K = gaia_magnitude_arr[2] - non_gaia_magnitude_arr[2] 
+        
+    non_gaia_magnitude_err_arr = [float(data_phot[17]),\
+                                  float(data_phot[19]),\
+                                  float(data_phot[21]),\
+                                  float(data_phot[15]),\
+                                  float(data_phot[13])] # This has erH,erJ,erK,erV,erB
     
     gaia_magnitude_err_arr = [float(data_phot[2]),float(data_phot[4]),float(data_phot[6])] # erG,erBp,erRp
-    
     
     ### Checking magnitude errors for NaNs ### 
     
@@ -644,7 +714,7 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     
     for non_gaia_error_index in range(len(non_gaia_magnitude_err_arr)):
         
-        if non_gaia_error_nans[non_gaia_error_index] == True:
+        if non_gaia_error_nans[non_gaia_error_index] == True: 
             
             non_gaia_magnitude_err_arr[non_gaia_error_index] = mag_fud
             
@@ -655,7 +725,7 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
         if gaia_error_nans[gaia_error_index] == True:
             
             gaia_magnitude_err_arr[gaia_error_index] = mag_fud
-            
+           
     ### End of checking magnitude errors for NaNs
     
     ### COMPOUNDING PHOTOMETRY MAGNITUDE ERRORS WITH REDDENING AND DISTANCE MODULUS ###
@@ -669,10 +739,18 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     sigma_ext_non_gaia = np.array([extinction_bands_errors[3],extinction_bands_errors[2],extinction_bands_errors[4],extinction_bands_errors[0],extinction_bands_errors[1]]) # HJKVB
     sigma_ext_gaia = np.array([extinction_bands_errors[5],extinction_bands_errors[6],extinction_bands_errors[7]]) # GBpRp
     
-    sigma_DM = 5 * (parallax_err/1000) / (parallax/1000 * np.log(10)) # this is assuming d = 1/p still holds 
     
-    sigma_photometry_non_gaia = (sigma_mag_non_gaia ** 2 + sigma_ext_non_gaia ** 2 + (np.ones([len(sigma_mag_non_gaia)])*sigma_DM) ** 2) ** 0.5 # order HJKVB 
-    sigma_photometry_gaia = (sigma_mag_gaia ** 2 + sigma_ext_gaia ** 2 + (np.ones([len(sigma_mag_gaia)])*sigma_DM) ** 2) ** 0.5 # order GBpRp
+    
+    sigma_DM_upper = 5 * (distance_err_upper) / (distance * np.log(10)) 
+    sigma_DM_lower = 5 * (distance_err_lower) / (distance * np.log(10)) 
+
+    
+    # for now average the errors
+    
+    sigma_DM = (abs(sigma_DM_upper) + abs(sigma_DM_lower))/2
+    
+    sigma_photometry_non_gaia = (sigma_mag_non_gaia ** 2 + sigma_ext_non_gaia ** 2) ** 0.5 # order HJKVB 
+    sigma_photometry_gaia = (sigma_mag_gaia ** 2 + sigma_ext_gaia ** 2) ** 0.5 # order GBpRp
     
     ### COMPOUNDING COLOUR ERRORS (WHICH ARE JUST MAGNITUDES) WITH REDDENING ###
     
@@ -687,6 +765,7 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     sigma_Bp_Rp = (gaia_magnitude_err_arr[1] ** 2 + gaia_magnitude_err_arr[2] ** 2 + sigma_ext_gaia[1] ** 2 + sigma_ext_gaia[2] ** 2)**0.5
     sigma_G_Rp = (gaia_magnitude_err_arr[0] ** 2 + gaia_magnitude_err_arr[2] ** 2 + sigma_ext_gaia[0] ** 2 + sigma_ext_gaia[2] ** 2)**0.5
     sigma_Bp_K = (gaia_magnitude_err_arr[1] ** 2 + non_gaia_magnitude_err_arr[2] ** 2 + sigma_ext_gaia[1] ** 2 + sigma_ext_non_gaia[2] ** 2)**0.5   
+    sigma_Rp_K = (gaia_magnitude_err_arr[2] ** 2 + non_gaia_magnitude_err_arr[2] ** 2 + sigma_ext_gaia[2] ** 2 + sigma_ext_non_gaia[2] ** 2)**0.5   
     
 #    gaia_colour_err_arr = np.ones([3])*max(sigma_photometry_gaia)*0.7#[sigma_Bp_Rp,sigma_G_Rp,sigma_Bp_K]
     gaia_colour_err_arr = [sigma_Bp_Rp,sigma_G_Rp,sigma_Bp_K]
@@ -696,10 +775,7 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     magnitude_arr = [non_gaia_magnitude_arr,gaia_magnitude_arr]
     
     magnitude_err_arr = [sigma_photometry_non_gaia,sigma_photometry_gaia]
-            
-#    non_gaia_max_magnitude_error = max(non_gaia_magnitude_err_arr) #standard deviation for all colours, using maximum so far as don't have erB, erV
-#    gaia_max_magnitude_error = max(gaia_magnitude_err_arr)
-    
+                
     mag_arr_input = [magnitude_arr,magnitude_err_arr] #array of magnitudes used
     
     ### PHOTOMETRY COLOUR ###
@@ -709,9 +785,12 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     
     colour_arr = [non_gaia_colour_arr,gaia_colour_arr]
     
-#    gaia_colour_err = gaia_max_magnitude_error # errors in color are defined by errors in magnitdues
-#    non_gaia_colour_err = non_gaia_max_magnitude_error
+    # Teff_IRFM_BpRp,Teff_IRFM_BpK,Teff_IRFM_RpK = IRFM_calc([Bp_Rp,sigma_Bp_Rp],[Bp_K,sigma_Bp_K],[Rp_K,sigma_Rp_K],phot_ast_central_values[1],phot_ast_central_values[2]) # requires
+
+    # print("IRFM_TEFF : Bp-Rp, Bp-K, Rp-K",Teff_IRFM_BpRp,Teff_IRFM_BpK,Teff_IRFM_RpK)
     
+    # from sbcr_plato_v1 import SCBR_VK
+        
     non_gaia_colour_err = non_gaia_colour_err_arr # these are in same order as respective colour arrays 
     gaia_colour_err = gaia_colour_err_arr
     
@@ -743,145 +822,15 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
         astrosize_max_err_input = astrosize_max_err_fud
             
     astrosize_arr_input = [astrosize_arr,[(astrosize_delta_err_input**2 + astrosize_delta_nu_sol_err**2) ** 0.5,(astrosize_max_err_input**2 + astrosize_nu_max_sol_err**2)**0.5]] # array of asteroseismic quantities used
-        
-    
-    phot_ast_probability_hbs = stellar_evo_likelihood(mag_arr_input,colour_arr_input,astrosize_arr_input,parallax,phot_ast_central_values,phot_ast_limits)
-    
-    
-    Like_tot_param_space = phot_ast_probability_hbs[0]
-    
+                        
     print(f"starting photometry likelihood calculation for star {stellar_id}")
-    
-    '''
-    N_hbs_index = len(hbs_index)
-    
-    Like_tot_param_space_list = []
-    
-    print(f"starting photometry likelihood calculation for star {stellar_id}")
-            
-    for iso_index in range(0,N_hbs_index):
                 
-        hbs_index_i = hbs_index[iso_index]
-        
-        # hbs_zero_metal_check = hbs_index_i.split("z")[1][:4]
-        
-        
-        # """
-        # GRABBING ONLY ZERO METALLICITY STARS
-        # """
-                
-        # if hbs_zero_metal_check != "p000":
-            
-        #     if hbs_zero_metal_check != "p005":
-            
-        #         continue
-            
-        # else:
-            
-        #     pass
-        
-        # print(hbs_zero_metal_check)        
-                
-        phot_ast_probability_hbs = stellar_evo_likelihood(mag_arr_input,colour_arr_input,astrosize_arr_input,parallax,hbs_index_i,phot_ast_central_values,phot_ast_limits)
-        
-        Like_tot_param_space_i  = phot_ast_probability_hbs[0]
-        # Like_tot_param_space_i  = phot_ast_probability_hbs
-        
-        nu_dof_arr = phot_ast_probability_hbs[1]
-        
-        if len(Like_tot_param_space_i) == 0: # If the variable is a non-populated list, then continue
-            
-            continue
-        
-        else:
-            
-            Like_tot_param_space_list.append(Like_tot_param_space_i)
-    
-    if len(Like_tot_param_space_list) == 0:
-        
-        print('Parameter space empty, loosen constraints')
-        
-        return Like_tot_param_space_list
-    
-    Like_tot_param_space = Like_tot_param_space_list[0] #initialisation 
-    
-    
-    
-    for build_index in range(1,len(Like_tot_param_space_list)): # The length of the list will be < length of hbs_index because of empty arrays being thrown out 
-        
-        Like_tot_param_space = np.vstack([Like_tot_param_space ,Like_tot_param_space_list[build_index]])   
-        # Like_tot_param_space = np.hstack([Like_tot_param_space ,Like_tot_param_space_list[build_index]])   
-    '''
-    
-    
-    
-#    stellar_id = stellar_id.replace("+","p").replace("-","m") # replaces +/- with p/m in filename respectively
-    '''
-    chi_2_non_gaia_mag = Like_tot_param_space[:,3]
-    chi_2_gaia_mag = Like_tot_param_space[:,4]
-    chi_2_non_gaia_col = Like_tot_param_space[:,5]
-    chi_2_gaia_col = Like_tot_param_space[:,6]
-    chi_2_ast = Like_tot_param_space[:,7]
-    
-    # if chi_2_red_bool == True:
-        
-        # nu_non_gaia_phot = nu_dof_arr[0]
-        # nu_gaia_phot = nu_dof_arr[1]
-        # nu_non_gaia_col = nu_dof_arr[2]
-        # nu_gaia_col = nu_dof_arr[3]
-        # nu_ast  = nu_dof_arr[4]
-        
-        # Lhood_non_gaia_mag_norm = np.exp(-(chi_2_non_gaia_mag/nu_non_gaia_phot)/2)
-        # Lhood_gaia_mag_norm = np.exp(-(chi_2_gaia_mag/nu_gaia_phot)/2)
-        # Lhood_non_gaia_col_norm = np.exp(-(chi_2_non_gaia_col/nu_non_gaia_col)/2)
-        # Lhood_gaia_col_norm = np.exp(-(chi_2_gaia_col/nu_gaia_col)/2)
-        # Lhood_ast_norm = np.exp(-(chi_2_ast/nu_ast)/2)
-                    
-        ### need to replace the probabilities calculated with these lhoods
-                    
-    # if chi_2_red_bool == False:
-        
-        ### normalise the other method
-        
-        # chi_2_non_gaia_mag_min = min(chi_2_non_gaia_mag)
-        # chi_2_gaia_mag_min = min(chi_2_gaia_mag)
-        # chi_2_non_gaia_col_min = min(chi_2_non_gaia_col)
-        # chi_2_gaia_col_min = min(chi_2_gaia_col)
-        # chi_2_ast_min = min(chi_2_ast)
-        
-        # Lhood_non_gaia_mag_norm = np.exp(-(chi_2_non_gaia_mag-chi_2_non_gaia_mag_min)/2)
-        # Lhood_gaia_mag_norm = np.exp(-(chi_2_gaia_mag-chi_2_gaia_mag_min)/2)
-        # Lhood_non_gaia_col_norm = np.exp(-(chi_2_non_gaia_col-chi_2_non_gaia_col_min)/2)
-        # Lhood_gaia_col_norm = np.exp(-(chi_2_gaia_col-chi_2_gaia_col_min)/2)
-        # Lhood_ast_norm = np.exp(-(chi_2_ast-chi_2_ast_min)/2)
+    phot_ast_probability_hbs = stellar_evo_likelihood(mag_arr_input,colour_arr_input,astrosize_arr_input,distance,phot_ast_central_values,phot_ast_limits,DM,sigma_DM,magnitude_set)
 
-    Lhood_non_gaia_mag_norm = chi_2_non_gaia_mag
-    Lhood_gaia_mag_norm = chi_2_gaia_mag
-    Lhood_non_gaia_col_norm = chi_2_non_gaia_col
-    Lhood_gaia_col_norm = chi_2_gaia_col
-    Lhood_ast_norm = chi_2_ast
-        
-    for lhood_loop in range(len(Like_tot_param_space)):
-        
-        Like_tot_param_space[lhood_loop] = np.hstack((Like_tot_param_space[lhood_loop][:3],
-                                                          Lhood_non_gaia_mag_norm[lhood_loop],
-                                                          Lhood_gaia_mag_norm[lhood_loop],
-                                                          Lhood_non_gaia_col_norm[lhood_loop],
-                                                          Lhood_gaia_col_norm[lhood_loop],
-                                                          Lhood_ast_norm[lhood_loop],                                                          
-                                                          Like_tot_param_space[lhood_loop][8:]))
-    
-    '''
-    
-    
+    Like_tot_param_space,phot_flag = phot_ast_probability_hbs #initialisation 
+                            
     stellar_id = stellar_id.replace(" ","_") # replaces an empty space in the name with an underscore
-    
-#    np.savetxt('Stars_Lhood_photometry/Gaia_benchmark/Lhood_space_photometry_best_params_GaiaBMS_starID{}'.format(stellar_id),best_fit_params,header=' Teff/K logg/dex [Fe/H]/dex Lhood_phot/dex Lhood_phot_col/dex Lhood_ast/dex Lhood_comb/dex Age/Gyr M/Msol') # Saving the best fit parameters from the combined likelihood plot
-
-    # print(nu_dof_arr,type(nu_dof_arr),np.shape(nu_dof_arr))
-
-    # np.savetxt(f"../Output_data/Stars_Lhood_photometry/{stellar_id}/degrees_freedom_phot_ast.txt",nu_dof_arr,delimiter=",") ### SAVE NU VALUES HERE
-        
+            
     pid = os.getpid()
     py = psutil.Process(pid)
     memoryUse = py.memory_info()[0]/2.**30
@@ -891,8 +840,8 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     if memoryUse >= threshhold:
         
         print("Warning, memory per core is at 80%, Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
-    
-    directory_photometry = stellar_id # name of directory is the name of the star
+        
+    directory_photometry = star_field_name # name of directory is the name of the star
     directory_check = os.path.exists(f"../Output_data/Stars_Lhood_photometry/{directory_photometry}")
     
     if  directory_check == True:
@@ -906,30 +855,16 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
         os.makedirs(f"../Output_data/Stars_Lhood_photometry/{directory_photometry}")
         
         print(f"../Output_data/Stars_Lhood_photometry/{directory_photometry} directory has been created")
-        
 
-    # np.save(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/Lhood_space_photometry_tot_starID{stellar_id}',Like_tot_param_space,allow_pickle=True) 
-    
-    # print("TOTAL NO. POINTS EVO MODEL = ",len(Like_tot_param_space[:,0]))
-    
-    # print(max(Lhood_ast_norm))
+    if save_phot_space_bool:
 
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_wide.txt',Like_tot_param_space,delimiter=",") 
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_EXTRA_wide.txt',Like_tot_param_space,delimiter=",") 
-    # 
-    np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3.txt',Like_tot_param_space,delimiter=",") 
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_non_stellar_evo_priors.txt',Like_tot_param_space,delimiter=",") 
+        np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_OBS_NUM_{spec_obs_number + 1}_test_4_{extra_save_string}.txt',Like_tot_param_space,delimiter=",") 
 
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_3_ast_NaN.txt',Like_tot_param_space,delimiter=",") 
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/stellar_track_collection_{stellar_id}_test_4.txt',Like_tot_param_space,delimiter=",") 
 
-    
-    # np.savetxt(f'../Output_data/Stars_Lhood_photometry/{directory_photometry}/luminosity_{stellar_id}_test_3.txt',Like_tot_param_space,delimiter=",") 
-
-    return Like_tot_param_space
+    return Like_tot_param_space,phot_flag
     
 
-
+@jit    
 def FeH_calc(Z_surf,X_surf):
     
     """
@@ -951,40 +886,47 @@ class PhotoSAPPError(Exception):
 print('loading evo tracks')
 
 shape = (49,46255417) # this is the shape of the large stellar evolution file 
+# shape = (24,9453868) # this is the shape of the large stellar evolution file 
 
-if os.path.exists('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy'):
-    
-    evoTrackArr = np.memmap('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy',shape=shape,mode='r',dtype=np.float64)
-    
+# test_input_path = ""
+test_input_path = "../SAPP_v1.1_clean_thesis_use/"
+
+# if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy"):
+if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy"): 
+
+    # evoTrackArr = np.memmap('../' + test_input_path + 'Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='r',dtype=np.float64)
+    evoTrackArr = np.memmap('../' + test_input_path + 'Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy',shape=shape,mode='r',dtype=np.float64)
+
     evoTrackFeh = FeH_calc(evoTrackArr[8],evoTrackArr[7])
+    # evoTrackFeh = evoTrackArr[7]
 
-else:
+# else:
     
-    print('Memmap doesn\'t exsits: Creating new one. This loads it into RAM! If this is not possible for you consider a different approach')
+#     print('Memmap doesn\'t exsits: Creating new one. This loads it into RAM! If this is not possible for you consider a different approach')
     
-    filesize = os.path.getsize('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_collection_total.npy')/10 ** 9 # GB
+#     filesize = os.path.getsize('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_collection_total.npy')/10 ** 9 # GB
     
-    mem_available = psutil.virtual_memory()[1]/2.**30
+#     mem_available = psutil.virtual_memory()[1]/2.**30
     
-    if filesize >= 0.8 * mem_available:
+#     if filesize >= 0.8 * mem_available:
         
-        print("file too large!")
+#         print("file too large!")
         
-        raise MemoryError
+#         raise MemoryError
         
-    else:
+#     else:
        
-        # could check the file size and the local virtual mem and if the file size exceeds something like 80%
-        # then manually throw an errir
+#         # could check the file size and the local virtual mem and if the file size exceeds something like 80%
+#         # then manually throw an errir
 
-        evoTrackArrmm = np.memmap('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='w+',dtype=np.float64)        
+#         evoTrackArrmm = np.memmap('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='w+',dtype=np.float64)        
         
-        evoTrackArr = np.load('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_collection_total.npy',allow_pickle=True)
+#         evoTrackArr = np.load('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_collection_total.npy',allow_pickle=True)
         
-        evoTrackArrmm[:,:] = evoTrackArr 
-        del evoTrackArrmm
-        del evoTrackArr
-        evoTrackArr = np.memmap('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='r',dtype=np.float64)
-        print('evo tracks loaded')
+#         evoTrackArrmm[:,:] = evoTrackArr 
+#         del evoTrackArrmm
+#         del evoTrackArr
+#         evoTrackArr = np.memmap('../Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='r',dtype=np.float64)
+#         print('evo tracks loaded')
 
-        evoTrackFeh = FeH_calc(evoTrackArr[8],evoTrackArr[7])
+#         evoTrackFeh = FeH_calc(evoTrackArr[8],evoTrackArr[7])
