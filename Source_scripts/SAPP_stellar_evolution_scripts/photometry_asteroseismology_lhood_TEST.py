@@ -929,7 +929,7 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     return Like_tot_param_space
     
 
-@jit    
+
 def FeH_calc(Z_surf,X_surf):
     
     """
