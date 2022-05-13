@@ -274,14 +274,18 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
     # The windows above are ones which should not go through secondary normalisation due to broad lines such as Halpha
     ###
     
-    # hr10
-    geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
+    # hr10 for UVES and HARPS spectra (in terms of range)
+    # geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
     # geslines_synth_no_secondary_norm = [[5499.83,5537.32],[5537.32,5564.46],[5564.46,5606.53]]
 
     ## hr21/Gaia RVS 
     # geslines_synth_no_secondary_norm = [[8480,8510],[8530,8560],[8650,8685],[8692,8705],[8705,8719],[8740,8745],[8760,8770],[8770,8778],[8788.00,8800.00]]
 
-    
+    ## 4MOST for 4MOST spectra     
+    geslines_synth_no_secondary_norm = [[4835.0,4895.0],[5118.2,5218.66],[5745.34,5755.0],[5871.95,5906.12],[6325.95,6372.25],[6520.5,6600.0]]
+
+
+
     ### CHECK IF ERROR EXISTS ###
     
     if len(error_flux) > 0:
@@ -393,7 +397,9 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
         if (wavelength[wvl_index+1]- wavelength[wvl_index]) > 5: 
             
             wvl_RdBl_gap.append([wavelength[wvl_index],wavelength[wvl_index+1]]) # there should only be one for UVES, two for HARPS
-                                    
+                                  
+    # print("RdBl gaps",wvl_RdBl_gap)        
+    
     flux_normalised_stitch = []
     error_flux_normalised_stitch = []
     wavelength_normalised_stitch = []
@@ -594,7 +600,7 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
         # plt.plot(wavelength_obs_zone,error_flux_zone)
         # plt.plot(wavelength_norm,error_flux_norm)
         # plt.plot(wavelength_norm,continuum_vardon,'r-')
-        
+        # plt.show()
         # plt.plot(wavelength_norm,flux_norm,'r-')
         
         #secondary normalisation
@@ -778,10 +784,20 @@ def continuum_normalise_spectra(wavelength,flux,error_flux,SNR_star,continuum_bu
         if wvl_diff > 5: # Angstroms, some arbitrary difference, gap could be smaller! 
         
             # multiply error by 1000
-                                    
-            error_flux_normalised_stitch[wvl_pixel+1] = error_flux_normalised_stitch[wvl_pixel+1] * 1000
-            error_flux_normalised_stitch[wvl_pixel] = error_flux_normalised_stitch[wvl_pixel] * 1000
-                
+            
+            # print(wavelength_normalised_stitch[wvl_pixel],wavelength_normalised_stitch[wvl_pixel+1])                        
+            
+            # error_flux_normalised_stitch[wvl_pixel+1] = error_flux_normalised_stitch[wvl_pixel+1] 
+            # error_flux_normalised_stitch[wvl_pixel] = error_flux_normalised_stitch[wvl_pixel] 
+
+            error_flux_normalised_stitch[wvl_pixel+1] = 1000
+            error_flux_normalised_stitch[wvl_pixel] = 1000
+            
+            flux_normalised_stitch[wvl_pixel+1] = 1
+            flux_normalised_stitch[wvl_pixel] = 1
+            
+    # error_flux_normalised_stitch[wavelength_normalised_stitch<4000] = 1000
+            
     return [wavelength_normalised_stitch,flux_normalised_stitch,error_flux_normalised_stitch,continuum_stitch,geslines_synth]
 
 

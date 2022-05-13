@@ -169,19 +169,19 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
 
     ## OLD LARGE GARSTEC TRACKS ##    
 
-    non_gaia_mag_model  = [evoTrackArr[27][mask]+0.0047,
-                            evoTrackArr[26][mask]-0.0357,
-                            evoTrackArr[28][mask]-0.0414,
-                            evoTrackArr[23][mask]+0.0479,
-                            evoTrackArr[22][mask]+0.0497] # H,J,K,V,B
+    # non_gaia_mag_model  = [evoTrackArr[27][mask]+0.0047,
+    #                         evoTrackArr[26][mask]-0.0357,
+    #                         evoTrackArr[28][mask]-0.0414,
+    #                         evoTrackArr[23][mask]+0.0479,
+    #                         evoTrackArr[22][mask]+0.0497] # H,J,K,V,B
 
     ## NEW SMALLER GARSTEC TRACKS ##
 
-    # non_gaia_mag_model  = [evoTrackArr[16][mask]+0.0047,
-    #                         evoTrackArr[15][mask]-0.0357,
-    #                         evoTrackArr[17][mask]-0.0414,
-    #                         evoTrackArr[12][mask]+0.0479,
-    #                         evoTrackArr[11][mask]+0.0497] # H,J,K,V,B
+    non_gaia_mag_model  = [evoTrackArr[16][mask]+0.0047,
+                            evoTrackArr[15][mask]-0.0357,
+                            evoTrackArr[17][mask]-0.0414,
+                            evoTrackArr[12][mask]+0.0479,
+                            evoTrackArr[11][mask]+0.0497] # H,J,K,V,B
 
     
     non_gaia_phot_var = non_gaia_mag_model # Gaussian input variable for non gaia magnitudes
@@ -207,13 +207,13 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
     #                    evoTrackArr[35][mask]+0.0201,
     #                    evoTrackArr[36][mask]-0.0078] # G,Bp,Rp    
 
-    gaia_mag_model = DR2_GARSTEC_DR3_convert(evoTrackArr[34][mask],evoTrackArr[34][mask],evoTrackArr[34][mask],evoTrackArr[3][mask])
+    # gaia_mag_model = DR2_GARSTEC_DR3_convert(evoTrackArr[34][mask],evoTrackArr[34][mask],evoTrackArr[34][mask],evoTrackArr[3][mask])
 
     ## NEW SMALLER GARSTEC TRACKS ##
 
-    # gaia_mag_model  = [evoTrackArr[21][mask]+0.01,
-    #                     evoTrackArr[22][mask]+0.0201,
-    #                     evoTrackArr[23][mask]-0.0078] # G,Bp,Rp    
+    gaia_mag_model  = [evoTrackArr[21][mask]+0.01,
+                        evoTrackArr[22][mask]+0.0201,
+                        evoTrackArr[23][mask]-0.0078] # G,Bp,Rp    
                 
     # gaia_phot_var = gaia_mag_model # Gaussian input variable for gaia magnitudes 
     gaia_phot_sigma = gaia_mag_err # Assuming each factor has the same standard deviation
@@ -321,7 +321,21 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
     # next we marginalise over the DM dimension by summing the probabilities in the DM axis
     # N.B. should we multiply by the difference in DM? Its just a regular grid therefore shouldn't affect the shape
     
+    pid = os.getpid()
+    py = psutil.Process(pid)
+    memoryUse = py.memory_info()[0]/2.**30
+    
+    print("PHOTOMETRY Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
+    
     L_phot  = np.nansum(np.array(L_tot),axis=0)[-1]  #*(DM_grid[1]-DM_grid[0]) 
+    
+    pid = os.getpid()
+    py = psutil.Process(pid)
+    memoryUse = py.memory_info()[0]/2.**30
+    
+    print("PHOTOMETRY Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
+    
+    del L_tot
     
     # normalise probability by the maximum value such that we get 1   
 
@@ -357,8 +371,8 @@ def stellar_evo_likelihood(mag_arr,colour_arr,astrosize_arr,pax,spec_central_val
         
         # leave astroseismology, thats it 
         
-        ev_shape = evoTrackArr[27][mask].shape
-        # ev_shape = evoTrackArr[16][mask].shape
+        # ev_shape = evoTrackArr[27][mask].shape
+        ev_shape = evoTrackArr[16][mask].shape
 
         ast_like_line_sum = np.zeros(ev_shape) # Initialisation of asteroseismic likelihood    
             
@@ -663,12 +677,13 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
         A_G = extinction_bands[5] 
         A_Bp = extinction_bands[6] 
         A_Rp = extinction_bands[7]
-
+                
     else: 
         
         A_G = magnitude_extinction_Gaia
         A_Bp = magnitude_extinction_Gaia        
         A_Rp = magnitude_extinction_Gaia
+
 
     extinction_bands_errors = extinction_multiple_bands_arr[1] # likewise for magnitudes
     
@@ -687,6 +702,9 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     non_gaia_magnitude_arr = [H_mag,J_mag,K_mag,V_mag,B_mag] #This has H,J,K,V,B
     gaia_magnitude_arr = [G_mag,Bp_mag,Rp_mag] # This has G,Bp,Rp
     
+    print("non_gaia_magnitude_arr",non_gaia_magnitude_arr)
+    print("gaia_magnitude_arr",gaia_magnitude_arr)
+    
     H_K = non_gaia_magnitude_arr[0] - non_gaia_magnitude_arr[2]
     V_K = non_gaia_magnitude_arr[3] - non_gaia_magnitude_arr[2]
     B_V = non_gaia_magnitude_arr[4] - non_gaia_magnitude_arr[3]
@@ -703,8 +721,12 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
                                   float(data_phot[21]),\
                                   float(data_phot[15]),\
                                   float(data_phot[13])] # This has erH,erJ,erK,erV,erB
+        
     
     gaia_magnitude_err_arr = [float(data_phot[2]),float(data_phot[4]),float(data_phot[6])] # erG,erBp,erRp
+
+    print("non_gaia_magnitude_err_arr",non_gaia_magnitude_err_arr)
+    print("gaia_magnitude_err_arr",gaia_magnitude_err_arr)
     
     ### Checking magnitude errors for NaNs ### 
     
@@ -739,7 +761,8 @@ def photometry_asteroseismic_lhood_stellar_list(stellar_inp):
     sigma_ext_non_gaia = np.array([extinction_bands_errors[3],extinction_bands_errors[2],extinction_bands_errors[4],extinction_bands_errors[0],extinction_bands_errors[1]]) # HJKVB
     sigma_ext_gaia = np.array([extinction_bands_errors[5],extinction_bands_errors[6],extinction_bands_errors[7]]) # GBpRp
     
-    
+    print("E(B-V) ",magnitude_reddening,"+",magnitude_reddening_err_pos,"-",magnitude_reddening_err_pos,", Gaia extinction [mag] ",extinction_bands_errors[5],extinction_bands_errors[6],extinction_bands_errors[7])
+
     
     sigma_DM_upper = 5 * (distance_err_upper) / (distance * np.log(10)) 
     sigma_DM_lower = 5 * (distance_err_lower) / (distance * np.log(10)) 
@@ -885,22 +908,22 @@ class PhotoSAPPError(Exception):
 
 print('loading evo tracks')
 
-shape = (49,46255417) # this is the shape of the large stellar evolution file 
-# shape = (24,9453868) # this is the shape of the large stellar evolution file 
+# shape = (49,46255417) # this is the shape of the large stellar evolution file 
+shape = (24,9453868) # this is the shape of the large stellar evolution file 
 
-test_input_path = ""
-# test_input_path = "../SAPP_v1.1_clean_thesis_use/"
+# test_input_path = ""
+test_input_path = "../SAPP_v1.1_clean_thesis_use/"
 
-# if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy"):
-if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy"): 
+if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy"):
+# if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy"): 
 
-    # evoTrackArr = np.memmap('../' + test_input_path + 'Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='r',dtype=np.float64)
-    evoTrackArr = np.memmap('../' + test_input_path + 'Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy',shape=shape,mode='r',dtype=np.float64)
+    evoTrackArr = np.memmap('../' + test_input_path + 'Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy',shape=shape,mode='r',dtype=np.float64)
+    # evoTrackArr = np.memmap('../' + test_input_path + 'Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy',shape=shape,mode='r',dtype=np.float64)
     
     # print(evoTrackArr[8],evoTrackArr[7])
 
-    # evoTrackFeh = evoTrackArr[7]    
-    evoTrackFeh = FeH_calc(evoTrackArr[8],evoTrackArr[7])
+    evoTrackFeh = evoTrackArr[7]    
+    # evoTrackFeh = FeH_calc(evoTrackArr[8],evoTrackArr[7])
 
 # else:
     

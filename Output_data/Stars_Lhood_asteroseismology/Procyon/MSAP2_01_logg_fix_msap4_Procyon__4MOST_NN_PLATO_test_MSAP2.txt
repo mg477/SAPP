@@ -1,0 +1,5 @@
+# Logg_ast_fix_mode, IDP_122_LOGG_SAPP_TMP/dex, IDP_122_LOGG_SAPP_TMP_lower_err/dex, IDP_122_LOGG_SAPP_TMP_upper_err/dex
+msap4
+3.99
+0.01
+0.01

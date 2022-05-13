@@ -1,0 +1,100 @@
+Visualization of the HDF5 file constants.hdf5
+--------------------------------------------- 
+
+Name  :  PLATO Constants WP120
+
+
+Purpose  :  This document lists the fundamental physical constants and solar system constants and their adopted values in order to have a homogeneous set to be used when running the SAS pipeline.
+
+
+content  :  Each constant is provided in both S.I. and C.G.S. units (which both have a group in this file). When dimensionless, the constant can be found in both groups. The units, full name and error (if existing) for each constant can be found in its attributes.
+
+
+last_mod  :  2022-03-09 11:49:16
+
+
+version  :  2.2
+
+
+ CGS 
+ |	 distances 
+ |	 |	 au ['Units : cm', 'fname : Astronomical unit'] ; 14959787070000.0
+ |	 |	 ly ['Units : m', 'fname : Light year'] ; 9227611857220000.0
+ |	 |	 pc ['Units : cm', 'fname : Parsec'] ; 3.08567758149e+18
+ |	 |	 y ["Units : ['days' 's']", 'fname : Julian year'] ; [3.65250e+02 3.15576e+07]
+ |	 fundamental 
+ |	 |	 G ['Units : cm3 g-1 s-2', 'error : 1.5e-07', 'fname : Newtonian constant of gravitation'] ; 6.6743015e-08
+ |	 |	 NA ['Units : mol-1', 'fname : Avogadro constant'] ; 6.02214076e+23
+ |	 |	 R ['Units : erg mol-1 K-1', 'fname : Molar gas constant '] ; 83144626.18
+ |	 |	 alpha ['Units : ', 'error : 0.011', 'fname : Fine-structure constant'] ; 0.007297352569311
+ |	 |	 c ['Units : cm s-1', 'fname : Speed of light in vacuum'] ; 29979245800.0
+ |	 |	 e ['Units : statC', 'fname : Elementary charge'] ; 4.803204712e-10
+ |	 |	 eV ['Units : J', 'fname : Electron Volt'] ; 1.602176634e-19
+ |	 |	 epsilon_0 ['Units : s4 A2 g-1 cm-3', 'error : 1.3e-20', 'fname : Vacuum electric permittivity '] ; 8.854187812813e-21
+ |	 |	 h ['Units : erg s', 'fname : Planck constant'] ; 6.62607015e-27
+ |	 |	 kb ['Units : erg K-1', 'fname : Bolztmann constant'] ; 1.380649e-16
+ |	 |	 m_alpha ['Units : g', 'error : 2e-23', 'fname : Alpha-particle mass'] ; 6.64465733572e-24
+ |	 |	 me ['Units : g', 'error : 2.8e-26', 'fname : Electron mass'] ; 9.109383701528e-27
+ |	 |	 mn ['Units : g', 'error : 9.5e-23', 'fname : Neutron mass'] ; 1.6749274980495e-24
+ |	 |	 mp ['Units : g', 'error : 5.1e-23', 'fname : Proton mass'] ; 1.6726219236951e-24
+ |	 |	 mu ['Units : g', 'error : 5e-23', 'fname : Atomic mass constant'] ; 1.6605390665e-24
+ |	 |	 sigma ['Units : erg s-1 m-2 K-4', 'fname : Stefan-Boltzmann constant'] ; 5.670374419e-05
+ |	 solar 
+ |	 |	 GM ['Units : cm3 s-2', 'fname : Solar mass parameter'] ; 1.3271244e+26
+ |	 |	 L ['Units : erg s-1', 'fname : Solar luminosity'] ; 3.828e+33
+ |	 |	 M  ['Units : g', 'fname : Solar mass'] ; 1.98841e+33
+ |	 |	 Mbol ['Units : mag', 'fname : Solar absolute bolometric magnitude'] ; 4.74
+ |	 |	 R ['Units : cm', 'fname : Solar radius'] ; 69570000000.0
+ |	 |	 Teff ['Units : K', 'fname : Solar effective temperature'] ; 5772.0
+ |	 |	 f ['Units : erg s-1 cm-2', 'fname : Total solar irradiance (solar constant)'] ; 1361000.0
+ |	 |	 mbol ['Units : mag', 'fname : Solar apparent bolometric magnitude'] ; -26.832
+ |	 |	 tau ['Units : y', 'error : 81000000000.0', 'fname : Solar age'] ; 4568100000.0
+ |	 solar_seismic 
+ |	 |	 Delta_nu ['Units : μHz', 'fname : Solar large frequency separation'] ; 135.1
+ |	 |	 nu_max ['Units : μHz', 'fname : Solar frequency of maximum power'] ; 3090
+ |	 terrestrial 
+ |	 |	 GME ['Units : cm3 s-2', 'fname : Earth mass parameter'] ; 3.986004e+20
+ |	 |	 ME ['Units : g', 'fname : Earth mass'] ; 5.9722e+27
+ |	 |	 RE ['* : RE = (REeq + REpol) / 2', 'Units : cm', 'fname : Earth radius*'] ; 636745000.0
+ |	 |	 REeq ['Units : cm', 'fname : Earth equatorial radius'] ; 637810000.0
+ SI 
+ |	 distances 
+ |	 |	 au ['Units : m', 'fname : Astronomical unit'] ; 149597870700.0
+ |	 |	 ly ['Units : m', 'fname : Light year'] ; 9227611857220000.0
+ |	 |	 pc ['Units : m', 'fname : Parsec'] ; 3.08567758149e+16
+ |	 |	 y ["Units : ['days' 's']", 'fname : Julian year'] ; [3.65250e+02 3.15576e+07]
+ |	 fundamental 
+ |	 |	 G ['Units : m3 kg-1 s-2', 'error : 1.5e-07', 'fname : Newtonian constant of gravitation'] ; 6.6743015e-11
+ |	 |	 NA ['Units : mol-1', 'fname : Avogadro constant'] ; 6.02214076e+23
+ |	 |	 R ['Units : J mol-1 K-1', 'fname : Molar gas constant '] ; 8.314462618
+ |	 |	 alpha ['Units : ', 'error : 0.011', 'fname : Fine-structure constant'] ; 0.007297352569311
+ |	 |	 c ['Units : m s-1', 'fname : Speed of light in vacuum'] ; 299792458.0
+ |	 |	 e ['Units : C', 'fname : Elementary charge'] ; 1.602176634e-19
+ |	 |	 eV ['Units : J', 'fname : Electron Volt'] ; 1.602176634e-19
+ |	 |	 epsilon_0 ['Units : s4 A2 kg-1 m-3', 'error : 1.3e-20', 'fname : Vacuum electric permittivity '] ; 8.854187812813e-12
+ |	 |	 h ['Units : J s', 'fname : Planck constant'] ; 6.62607015e-34
+ |	 |	 kb ['Units : J K-1', 'fname : Bolztmann constant'] ; 1.380649e-23
+ |	 |	 m_alpha ['Units : kg', 'error : 2e-23', 'fname : Alpha-particle mass'] ; 6.64465733572e-27
+ |	 |	 me ['Units : kg', 'error : 2.8e-26', 'fname : Electron mass'] ; 9.109383701528e-31
+ |	 |	 mn ['Units : kg', 'error : 9.5e-23', 'fname : Neutron mass'] ; 1.6749274980495e-27
+ |	 |	 mp ['Units : kg', 'error : 5.1e-23', 'fname : Proton mass'] ; 1.6726219236951e-27
+ |	 |	 mu ['Units : kg', 'error : 5e-23', 'fname : Atomic mass constant'] ; 1.6605390665e-27
+ |	 |	 sigma ['Units : J s-1 m-2 K-4', 'fname : Stefan-Boltzmann constant'] ; 5.670374419e-08
+ |	 solar 
+ |	 |	 GM ['Units : m3 s-2', 'fname : Solar mass parameter'] ; 1.3271244e+20
+ |	 |	 L ['Units : J s-1', 'fname : Solar luminosity'] ; 3.828e+26
+ |	 |	 M  ['Units : kg', 'fname : Solar mass'] ; 1.98841e+30
+ |	 |	 Mbol ['Units : mag', 'fname : Solar absolute bolometric magnitude'] ; 4.74
+ |	 |	 R ['Units : m', 'fname : Solar radius'] ; 695700000.0
+ |	 |	 Teff ['Units : K', 'fname : Solar effective temperature'] ; 5772.0
+ |	 |	 f ['Units : J s-1 m-2', 'fname : Total solar irradiance (solar constant)'] ; 1361.0
+ |	 |	 mbol ['Units : mag', 'fname : Solar apparent bolometric magnitude'] ; -26.832
+ |	 |	 tau ['Units : y', 'error : 81000000000.0', 'fname : Solar age'] ; 4568100000.0
+ |	 solar_seismic 
+ |	 |	 Delta_nu ['Units : μHz', 'fname : Solar large frequency separation'] ; 135.1
+ |	 |	 nu_max ['Units : μHz', 'fname : Solar frequency of maximum power'] ; 3090
+ |	 terrestrial 
+ |	 |	 GME ['Units : m3 s-2', 'fname : Earth mass parameter'] ; 398600400000000.0
+ |	 |	 ME ['Units : kg', 'fname : Earth mass'] ; 5.9722e+24
+ |	 |	 RE ['* : RE = (REeq + REpol) / 2', 'Units : m', 'fname : Earth radius*'] ; 6367450.0
+ |	 |	 REeq ['Units : m', 'fname : Earth equatorial radius'] ; 6378100.0

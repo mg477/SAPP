@@ -107,13 +107,13 @@ def restore1(wvl_arr, *labels):
     elif cheb >= 1:
         first=relu(np.dot(w_array_0,labels[1:-cheb])+ b_array_0)
     #2nd layer
-    snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
-    # snd=relu(np.dot(w_array_1,first) + b_array_1)
+    # snd=sigmoid(np.dot(w_array_1,first) + b_array_1) # HR10
+    snd=relu(np.dot(w_array_1,first) + b_array_1) # 4MOST
     #3nd layer
     trd=(np.dot(w_array_2,snd) + b_array_2)
     # trd=sigmoid(np.dot(w_array_2,snd) + b_array_2)
 
-    predict_flux = trd
+    predict_flux = trd[ids]
     
     if cheb >=1:
                 
@@ -391,9 +391,10 @@ def RV_multi_template(wvl,
     # print("=====================")
     # print("SOLAR RV")
                 
-    model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0],0)             # this is for hr10 NN Mikhail trained
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0],0)             # this is for hr10 NN Mikhail trained
     # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN Jeff trained        
     # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for RVS NN Mikhail trained        
+    model_wvl,model_flux = star_model(wvl,np.hstack(([5777,4.44,0.00],np.zeros([30]))),0) # 4MOST HR LTE grid         
 
     ## in this case the model wvl range will not be always larger than the observed
     ## this means to interpolate the obs to the model wvl range, you need to make sure
@@ -437,9 +438,12 @@ def RV_multi_template(wvl,
     ### Solar star METAL POOR RV TEMPLATE ###
     # check the abundances with Maria
 
-    model_wvl,model_flux = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8],0)             # this is for hr10 NN Mikhail trained
+    # model_wvl,model_flux = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8],0)             # this is for hr10 NN Mikhail trained
     # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1.6])             # this is for RVS NN Jeff trained        
     # model_wvl,model_flux = star_model(wvl,[5.777,4.44,0.00,0,0,0,0,0,0,0,0,0,0])             # this is for RVS NN Mikhail trained        
+    model_wvl,model_flux = star_model(wvl,np.hstack(([5777,4.44,-2],np.zeros([30]))),0)        # 4MOST HR LTE grid          
+
+    
     
     rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
                                                           [model_wvl,model_flux],\
@@ -477,10 +481,11 @@ def RV_multi_template(wvl,
     # print("RGB solar [Fe/H] RV")
 
                 
-    model_wvl,model_flux = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0],0)                  # this is for hr10 NN Mikhail trained 
+    # model_wvl,model_flux = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0],0)                  # this is for hr10 NN Mikhail trained 
     # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0,1,1,1])                  # this is for RVS NN Jeff trained 
     # model_wvl,model_flux = star_model(wvl,[4400,1.5,0.00,0,0,0,0,0,0,0,0,0,0])                  # this is for RVS NN Mikhail trained 
-    
+    model_wvl,model_flux = star_model(wvl,np.hstack(([4400,1.5,0],np.zeros([30]))),0)        # 4MOST HR LTE grid          
+
     
     rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
                                                           [model_wvl,model_flux],\
@@ -517,9 +522,10 @@ def RV_multi_template(wvl,
     # print("=====================")
     # print("RGB poor [Fe/H] RV")
                 
-    model_wvl,model_flux = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8],0)          # this is for hr10 NN Mikhail trained         
+    # model_wvl,model_flux = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8],0)          # this is for hr10 NN Mikhail trained         
     # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8,1,1,1])          # this is for RVS NN Jeff trained      
     # model_wvl,model_flux = star_model(wvl,[4400,1.5,-2,0,0,0,0,0,-0.2,0,0,-0.2,-0.8])          # this is for RVS NN Mikhail trained      
+    model_wvl,model_flux = star_model(wvl,np.hstack(([4400,1.5,-2],np.zeros([30]))),0)        # 4MOST HR LTE grid          
         
     rv_shift,rv_array,cross_corr,chi2_rv = rv_cross_corelation_no_fft([wvl,obs,usert],\
                                                           [model_wvl,model_flux],\
@@ -587,6 +593,133 @@ def read_fits_GES_GIR_spectra(path):
     error_med = flux_norm/SNR_med # can't seem to find error from fits
     
     return wavelength,flux_norm,error_med,rv_shift,rv_shift_err,SNR_med,np.average(1/flux_norm_inverse_variance**0.5),np.average(1/flux_inverse_variance**0.5)
+
+def read_4most_OpR2_fits(spec_path):
+    
+    hdulist = pyfits.open(spec_path)
+        
+    scidata = hdulist[1].data
+            
+    wavelength = scidata['WAVE'][0] # was stored as nm
+    flux = scidata['FLUX'][0]
+    
+    #print("ERR_IVAR",scidata['ERR_IVAR'][0])
+    
+    # ERR_IVAR can be zero sometimes which implies maximum error
+    # what should we do? There's a run time warning
+    
+    # print("IVAR zero percentage",len(scidata['ERR_IVAR'][0][scidata['ERR_IVAR'][0] == 0])/len(scidata['ERR_IVAR'][0]) * 100)
+    
+    inverse_variant = scidata['ERR_IVAR'][0]
+    
+    inverse_variant[inverse_variant == 0.0] = 1e-6#(SNR/flux[inverse_variant == 0.0]) ** 2
+    
+    error = np.sqrt(1/inverse_variant)
+
+    SNR =  hdulist[1].header['SNR']
+
+    synth_err_bool = False
+    
+    rv_shift = np.nan
+    rv_shift_err = np.nan
+    
+    return wavelength,flux,error,rv_shift,rv_shift_err,SNR,synth_err_bool 
+
+def process_4most_chip_HR_spectra(spec_path):
+
+    red_path = spec_path + "_HR1.fits"
+    green_path = spec_path + "_HG1.fits"
+    blue_path = spec_path + "_HB1.fits"
+                        
+    wavelength_red,\
+    flux_red,\
+    error_red,\
+    rv_shift_red,\
+    rv_shift_err_red,\
+    snr_star_red,\
+    synth_err_bool_red =  read_4most_OpR2_fits(red_path)
+
+    wavelength_green,\
+    flux_green,\
+    error_green,\
+    rv_shift_green,\
+    rv_shift_err_green,\
+    snr_star_green,\
+    synth_err_bool_green =  read_4most_OpR2_fits(green_path)
+
+    wavelength_blue,\
+    flux_blue,\
+    error_blue,\
+    rv_shift_blue,\
+    rv_shift_err_blue,\
+    snr_star_blue,\
+    synth_err_bool_blue =  read_4most_OpR2_fits(blue_path)
+                    
+    if True in [synth_err_bool_red,synth_err_bool_green,synth_err_bool_blue]:
+        synth_err_bool = True
+    else:
+        synth_err_bool = False
+                
+    if np.isnan(np.nanmean([rv_shift_red,rv_shift_green,rv_shift_blue])): # i.e. they are all nans
+        rv_shift = np.nan
+        rv_shift_err = np.nan
+    else:
+        rv_shift = np.nanmean([rv_shift_red,rv_shift_green,rv_shift_blue])
+        rv_shift_err = np.nanmean([rv_shift_err_red,rv_shift_err_green,rv_shift_err_blue])
+        
+    ### sigma clipping step ### 
+
+    flux_clipped_red = flux_red       
+    # flux_clipped_red = sigclip(flux_red,sig=2.5)    
+    error_clipped_red = error_red # should only be clipped if based on observed flux 
+    flux_clipped_green = flux_green   
+    # flux_clipped_green = sigclip(flux_green,sig=2.5)    
+    error_clipped_green = error_green # should only be clipped if based on observed flux 
+    flux_clipped_blue = flux_blue
+    # flux_clipped_blue = sigclip(flux_blue,sig=2.5)    
+    error_clipped_blue = error_blue # should only be clipped if based on observed flux 
+    
+    ### stack observed arms together and average SNR
+    # here we are trying to cont norm after joining
+        
+    flux_clipped = np.hstack((flux_clipped_red,flux_clipped_green,flux_clipped_blue))
+    error_clipped = np.hstack((error_clipped_red,error_clipped_green,error_clipped_blue))
+    wavelength = np.hstack((wavelength_red,wavelength_green,wavelength_blue))
+
+    wavelength_1_angstrom_red = wavelength_red[wavelength_red <= (min(wavelength_red) + 1)]
+    SNR_per_angstrom_red = np.sqrt(len(wavelength_1_angstrom_red))  
+
+    wavelength_1_angstrom_green = wavelength_green[wavelength_green <= (min(wavelength_green) + 1)]
+    SNR_per_angstrom_green = np.sqrt(len(wavelength_1_angstrom_green))  
+
+    wavelength_1_angstrom_blue = wavelength_blue[wavelength_blue <= (min(wavelength_blue) + 1)]
+    SNR_per_angstrom_blue = np.sqrt(len(wavelength_1_angstrom_blue))  
+    
+    snr_star_per_pix = np.nanmean([snr_star_red,\
+                                   snr_star_green,\
+                                   snr_star_blue]) # in per angstrom 
+
+    snr_star_per_angs = np.nanmean([snr_star_red * SNR_per_angstrom_red,\
+                                   snr_star_green * SNR_per_angstrom_green,\
+                                   snr_star_blue * SNR_per_angstrom_blue]) # in per angstrom 
+        
+    # print("converted before averaging",snr_star_per_angs) # correct to 14 D.P.
+    # print("converted after averaging",snr_star_per_pix * np.average([SNR_per_angstrom_red,SNR_per_angstrom_green,SNR_per_angstrom_blue]))
+            
+    snr_star = snr_star_per_angs # right now assuming this is correct
+        
+    snr_star_array = [snr_star_per_pix,
+                      snr_star_red,
+                      snr_star_green,
+                      snr_star_blue,
+                      SNR_per_angstrom_red,
+                      SNR_per_angstrom_green,
+                      SNR_per_angstrom_blue,
+                      snr_star_per_angs]
+    
+    return wavelength,flux_clipped,error_clipped,rv_shift,rv_shift_err,snr_star,synth_err_bool,snr_star_array
+
+
 
 def read_txt_spectra(path):
     
@@ -794,6 +927,8 @@ def find_best_val(ind_spec_arr):
     
     recalc_metals_inp = ind_spec_arr[12]
     
+    # print("recalc_metals_bool",recalc_metals_bool,recalc_metals_inp)
+    
     # array [Teff,logg,[Fe/H]]
     
     logg_fix_bool = ind_spec_arr[13]
@@ -813,6 +948,17 @@ def find_best_val(ind_spec_arr):
     unique_params_arr = ind_spec_arr[15]
     
     star_name_id = ind_spec_arr[16]
+    
+    rv_shift_direct = ind_spec_arr[17] # this is rv straight from main.py
+    rv_shift_direct_err = ind_spec_arr[18]
+
+    numax_first_step_logg = ind_spec_arr[19]
+    
+    numax_first_step_logg_bool = numax_first_step_logg[0]
+    numax_first_step_logg_arr = numax_first_step_logg[1:]
+    
+    extra_save_string = ind_spec_arr[20]
+    
     
     """
     Below is where the spectral information is fed in, this function should be tailored to the specific type of file
@@ -907,10 +1053,27 @@ def find_best_val(ind_spec_arr):
     # rv_shift,\
     # rv_shift_err,\
     # snr_star = read_UVES_fits_spectra(spec_path)
+    
+    
+    ### 4MOST fit files ### 
+    
+    # wavelength,\
+    # flux_norm,\
+    # error_med,\
+    # rv_shift,\
+    # rv_shift_err,\
+    # snr_star,\
+    # synth_err_bool,\
+    # snr_star_array = process_4most_chip_HR_spectra(spec_path)
+    
+    # snr_star = 100
+    
+    # rv_shift = 0.2500000000000015
         
     print("SNR",snr_star)
-    print("RV ",rv_shift,"+-",rv_shift_err,"Km/s")
-        
+    print("RV star",rv_shift,"+-",rv_shift_err,"Km/s")
+    
+    
     if snr_star <= 0: 
         
         # this can happen, for now the function returns zero
@@ -938,7 +1101,15 @@ def find_best_val(ind_spec_arr):
             
             # further detail can be found in the continuum_normalise_spectra() script
 
-            geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1_hr10.txt")
+            # geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1_hr10.txt")
+            geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_4MOST_HRS_v1_joint.txt")
+            # geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_4MOST_HRS_v1_joint_no_gaps.txt")
+            
+            # fig_cont = plt.figure(figsize=(18,10))
+            # ax_cont = fig_cont.add_subplot(111)
+
+            # ax_cont.plot(wavelength,flux_clipped,'ro',markersize=0.25)
+
             
             spec_norm_results = continuum_normalise_spectra(wavelength = wavelength,\
                                         flux = flux_clipped,\
@@ -959,7 +1130,19 @@ def find_best_val(ind_spec_arr):
             wvl = wavelength_normalised_stitch
             obs = flux_normalised_stitch
             usert = error_flux_normalised_stitch
-                                
+            
+
+            # ax_cont.plot(wvl,obs*0.5*max(flux_clipped),'ko',markersize=0.25)
+            # ax_cont.plot(wvl,usert,'g-')
+            # ax_cont.set_xlim([6100,6400])
+            # # ax_cont.set_xlim([6300,6400])
+
+            # # ax_cont.set_ylim([0,1e6])
+            # plt.show()
+            
+            # a=b
+            
+                                            
         elif cont_norm_bool == False:
     
             wvl = wavelength
@@ -978,45 +1161,53 @@ def find_best_val(ind_spec_arr):
         """
                         
         # print("Pre-RV correction : time elapsed ----",time.time()-start_time,"----- seconds ----")
-                
-        if np.isnan(rv_shift):
-            
-            # if the rv_shift doesn't exist, NaN is given. 
-            
-            print("Re-calculating RV correction...")
-            
-            rv_shift, rv_shift_err = RV_multi_template(wvl,
-                                                      obs,
-                                                      usert,
-                                                      rv_min,
-                                                      rv_max,
-                                                      drv,
-                                                      input_spec_resolution)
-                
-            rv_shift_err = drv
-            
-            print("Recalc RV ",rv_shift,"+-",drv,"Km/s")
         
-        if rv_shift_recalc == True:
-            
-            # if you want to re-calculate it, then it will
-            
-            print("Re-calculating RV correction...")
-            
-            
-            rv_shift, rv_shift_err = RV_multi_template(wvl,
-                                                      obs,
-                                                      usert,
-                                                      rv_min,
-                                                      rv_max,
-                                                      drv,
-                                                      input_spec_resolution)
-
-
-            rv_shift_err = drv
+        if np.isnan(rv_shift_direct):
+        
+            if np.isnan(rv_shift):
                 
-            print("Recalc RV ",rv_shift,"+-",drv,"Km/s")
+                # if the rv_shift doesn't exist, NaN is given. 
+                
+                print("Re-calculating RV correction...")
+                
+                rv_shift, rv_shift_err = RV_multi_template(wvl,
+                                                          obs,
+                                                          usert,
+                                                          rv_min,
+                                                          rv_max,
+                                                          drv,
+                                                          input_spec_resolution)
+                    
+                rv_shift_err = drv
+                
+                print("Recalc RV ",rv_shift,"+-",drv,"Km/s")
+            
+            if rv_shift_recalc == True:
+                
+                # if you want to re-calculate it, then it will
+                
+                print("Re-calculating RV correction...")
+                
+                
+                rv_shift, rv_shift_err = RV_multi_template(wvl,
+                                                          obs,
+                                                          usert,
+                                                          rv_min,
+                                                          rv_max,
+                                                          drv,
+                                                          input_spec_resolution)
+    
+    
+                rv_shift_err = drv
+                    
+                print("Recalc RV ",rv_shift,"+-",drv,"Km/s")
+            
+        else:
+            
+            rv_shift = rv_shift_direct
+            rv_shift_err = rv_shift_direct_err
 
+            print("Recalc RV direct",rv_shift,"+-",rv_shift_err,"Km/s")
             
         
         wvl_corrected = RV_correction_vel_to_wvl_non_rel(wvl,rv_shift) 
@@ -1074,10 +1265,26 @@ def find_best_val(ind_spec_arr):
     
         # great, now obs is cut to model if it was bigger. If mod is bigger, then it'll pass on
         wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,rv_shift,wvl_to_cut))
-    
+        
+        ''
+        # wvl_mask = (wvl>5300)&(wvl<5400)
+        # plt.plot(wvl[wvl_mask],obs[wvl_mask],'k.',zorder=0)
+        # plt.plot(wvl[wvl_mask],usert[wvl_mask],'g.',zorder=0)        
         obs = np.interp(w0_new,wvl_corrected,obs) # this will cut obs to model if model is smaller
         usert = np.interp(w0_new,wvl_corrected,usert)
         wvl_corrected = np.interp(w0_new,wvl_corrected,wvl_corrected)
+        
+        # obs[(wvl_corrected>=5303.9556)&(wvl_corrected<=5336.7661)] = 1
+        
+
+    
+        # wvl_corrected_mask = (wvl_corrected>5300)&(wvl_corrected<5400)
+        # plt.plot(wvl_corrected[wvl_corrected_mask],obs[wvl_corrected_mask],'r+',zorder=1)
+        # plt.plot(wvl_corrected[wvl_corrected_mask],usert[wvl_corrected_mask],'y.',zorder=1)
+        # # plt.plot(wvl[wvl_mask],usert[wvl_mask],'g-',linewidth=0.5)
+        # # plt.axhline(y=1,color='grey',linestyle='--',zorder=0)
+        # plt.show()
+        ''
         
                                 
         ## process zeros in error ##
@@ -1099,12 +1306,15 @@ def find_best_val(ind_spec_arr):
                 
                 residual_error_map = create_error_mask(error_mask_index,unique_params_arr,wvl_corrected,obs,w0_new,rv_shift)    
                 residual_error_map_arr = [residual_error_map]
+
+                # np.savetxt(f"../Output_data/test_spectra_emasks/sun/{star_name_id}_4MOST_NN_emask_HR10_Halpha.txt",residual_error_map)                
+                np.savetxt(f"../Output_data/test_spectra_emasks/sun/{star_name_id}_4MOST_NN_emask_alt_chip_2.txt",residual_error_map)
     
             else:
                 
                 print("USING TEFF VARYING ERROR MASK")
                                 
-                ''
+                '''
                 if float(PLATO_bmk_lit[:,1][error_mask_index]) < 5500:
                     
                     ### load low temp error mask :  del eri
@@ -1148,7 +1358,28 @@ def find_best_val(ind_spec_arr):
                                                residual_error_map_4,
                                                residual_error_map_5]
 
-                ''
+                '''
+                
+                emask_string = "_alt_chip_2"
+                
+                residual_error_map_1 = np.loadtxt(f"../Output_data/test_spectra_emasks/sun/HARPS_Sun-1_Ceres_4MOST_NN_emask{emask_string}.txt")
+                residual_error_map_2 = np.loadtxt(f"../Output_data/test_spectra_emasks/sun/HARPS_Sun-2_Ganymede_4MOST_NN_emask{emask_string}.txt")
+                residual_error_map_3 = np.loadtxt(f"../Output_data/test_spectra_emasks/sun/HARPS_Sun-3_Vesta_4MOST_NN_emask{emask_string}.txt")
+                residual_error_map_4 = np.loadtxt(f"../Output_data/test_spectra_emasks/sun/UVES_Sun_4MOST_NN_emask{emask_string}.txt")                    
+                residual_error_map_5 = np.loadtxt(f"../Output_data/test_spectra_emasks/sun/Vesta.dop_4MOST_NN_emask{emask_string}.txt")                    
+
+                residual_error_map_arr = [residual_error_map_1,
+                                          residual_error_map_2,
+                                          residual_error_map_3,
+                                          residual_error_map_4,
+                                          residual_error_map_5]
+                # residual_error_map_arr = [residual_error_map_1,
+                #                           residual_error_map_2,
+                #                           residual_error_map_3,
+                #                           residual_error_map_4]
+                
+                print("using solar emask")
+
 
             # this function compares the error masks to the spectra it is being combined with
             # processes it such that the wavelength scale and limits match the observations
@@ -1176,11 +1407,17 @@ def find_best_val(ind_spec_arr):
                 wvl_err_mask_collect.append(wvl_err_mask_dummy)
                 err_mask_collect.append(err_mask_dummy)
                 
+            # print(wvl_err_mask_collect)
+            # print(err_mask_collect)
+                
             wvl_err_mask_ave = np.mean(np.array(wvl_err_mask_collect),axis=0)
             err_mask_collect_ave = np.mean(np.array(err_mask_collect),axis=0)
             
             err_mask = err_mask_collect_ave 
             wvl_err_mask = wvl_err_mask_ave
+            
+            # a=b
+            
             
             # print("Error-mask process : time elapsed ----",time.time()-start_time,"----- seconds ----")
                 
@@ -1227,7 +1464,11 @@ def find_best_val(ind_spec_arr):
         
         popt_init= np.zeros(num_labels+1+cheb)
         
-        if recalc_metals_bool == True: 
+        # print("before bool")
+        
+        if recalc_metals_bool: 
+            
+            # print("bool activated")
             
             temp_fix = recalc_metals_inp[0]
             logg_fix = recalc_metals_inp[1]
@@ -1248,7 +1489,8 @@ def find_best_val(ind_spec_arr):
                 hb=init+0.49
                 
                 fix=0#Teff index
-                init[fix+1]=(temp_fix/1000-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+                # init[fix+1]=(temp_fix/1000-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
+                init[fix+1]=(temp_fix-x_min[fix])/(x_max[fix]-x_min[fix])-0.5 # 4MOST
                 lb[fix+1]=init[fix+1]-1e-4
                 hb[fix+1]=init[fix+1]+1e-4
                 
@@ -1389,6 +1631,11 @@ def find_best_val(ind_spec_arr):
                 
                 nu_max_iter_arr = [nu_max-nu_max_err,nu_max,nu_max+nu_max_err]
                 
+                if numax_first_step_logg_bool:
+                    logg_iter_arr = [numax_first_step_logg_arr[0]-numax_first_step_logg_arr[1],\
+                                     numax_first_step_logg_arr[0],\
+                                     numax_first_step_logg_arr[0]+numax_first_step_logg_arr[2]] # logg_lower, logg_central, logg_upper
+                
                 final_nu_max_collect = [] # there will be 3 elements 
                 efin_nu_max_collect = []
                 popt_nu_max_collect = []
@@ -1425,14 +1672,22 @@ def find_best_val(ind_spec_arr):
                         # print(type(nu_max),astroc.nu_max_sol,final[0],astroc.teff_sol,astroc.surf_grav_sol)
                         
                         if ncount == 0: # use the initial guess
-                            
-                            logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final_orig[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+                        
+                            if numax_first_step_logg_bool :
+                                
+                                logg_numax = logg_iter_arr[nu_max_loop] # use MSAP2-01 guess here, it is only the first guess, double check errors
+                            else:                  
+                                # logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final_orig[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+                                logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final_orig[0]/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
                             
                         else: # use the parameter "final" which is overwritten 
                             
-                            logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+                            # logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final[0]*1000/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+                            logg_numax = np.log10((nu_max_iter_arr[nu_max_loop]/astroc.nu_max_sol) * (final[0]/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
             
-                        # print(nu_max_loop,ncount,final[0]*1000,logg_numax)
+                    
+            
+                        print(nu_max_loop,ncount,final[0],logg_numax)
                         
                         # print(nu_max_loop,ncount,logg_numax,":",nu_max_iter_arr[nu_max_loop],astroc.nu_max_sol,final[0]*1000,astroc.teff_sol,astroc.surf_grav_sol)
             
@@ -1509,7 +1764,8 @@ def find_best_val(ind_spec_arr):
                     # need to search through and find where Tdiff = 10
                     for tdiff_search_loop in range(1,len(final_collect)):
                         
-                           tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])*1000
+                           # tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])*1000
+                           tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])
                         
                            if tdiff_dummy <= 10:
                                
@@ -1529,7 +1785,8 @@ def find_best_val(ind_spec_arr):
                     # need to search through and find where Tdiff = 10
                     for tdiff_search_loop in range(1,len(final_collect)):
                         
-                           tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])*1000
+                           # tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])*1000
+                           tdiff_dummy = (final_collect[tdiff_search_loop][0]-final_collect[tdiff_search_loop-1][0])
                         
                            tdiff_dummy_collect.append(tdiff_dummy)
             
@@ -1634,8 +1891,8 @@ def find_best_val(ind_spec_arr):
                 
                     try:
                                     init= np.zeros(num_labels+1+cheb)
-                                    lb=init-0.51
-                                    hb=init+0.51
+                                    lb=init-0.49
+                                    hb=init+0.49
                                         
                                     fix=1#logg index
                                     init[fix+1]=(logg_loop-x_min[fix])/(x_max[fix]-x_min[fix])-0.5
@@ -1736,11 +1993,13 @@ def find_best_val(ind_spec_arr):
                 
         ### here we apply the delta RV correction which comes from fitting 
         
+        wvl_corrected_orig = wvl_corrected.copy()
+        
         wvl_corrected = RV_correction_vel_to_wvl_non_rel(wvl_corrected,6*popt[0])
                 
         rv_shift += 6*popt[0]
         
-        print("New RV",rv_shift + 6*popt[0])
+        print("New RV",rv_shift + 6*popt[0]," Km/s")
         
         '''
         
@@ -1750,16 +2009,16 @@ def find_best_val(ind_spec_arr):
         
         ### load up 4 models for comparison 
         
-        model_wvl_solar,model_flux_solar = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0],rv_shift)             # this is for hr10 NN Mikhail trained
-        model_wvl_solar_poor,model_flux_solar_poor = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8],rv_shift)             # this is for hr10 NN Mikhail trained
-        model_wvl_RGB,model_flux_RGB = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0],rv_shift)                  # this is for hr10 NN Mikhail trained 
-        model_wvl_RGB_poor,model_flux_RGB_poor = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8],rv_shift)          # this is for hr10 NN Mikhail trained         
+        # model_wvl_solar,model_flux_solar = star_model(wvl,[5.777,4.44,0.00,1,1.6,0,0,0],rv_shift)             # this is for hr10 NN Mikhail trained
+        # model_wvl_solar_poor,model_flux_solar_poor = star_model(wvl,[5.777,4.44,-2.00,1,1.6,-0.2,-0.2,-0.8],rv_shift)             # this is for hr10 NN Mikhail trained
+        # model_wvl_RGB,model_flux_RGB = star_model(wvl,[4.400,1.5,0.00,1,1,0,0,0],rv_shift)                  # this is for hr10 NN Mikhail trained 
+        # model_wvl_RGB_poor,model_flux_RGB_poor = star_model(wvl,[4.400,1.5,-2,1,1,-0.2,-0.2,-0.8],rv_shift)          # this is for hr10 NN Mikhail trained         
         
-        model_average_flux = np.mean(np.array([model_flux_solar,model_flux_RGB,model_flux_solar_poor,model_flux_RGB_poor]),axis=0)
-        model_average_wvl = w0.copy()        
-        cont_buffer = 0.01
-        model_average_wvl =model_average_wvl[model_average_flux>=(1-cont_buffer)]        
-        model_average_flux = model_average_flux[model_average_flux>=(1-cont_buffer)]
+        # model_average_flux = np.mean(np.array([model_flux_solar,model_flux_RGB,model_flux_solar_poor,model_flux_RGB_poor]),axis=0)
+        # model_average_wvl = w0.copy()        
+        # cont_buffer = 0.01
+        # model_average_wvl =model_average_wvl[model_average_flux>=(1-cont_buffer)]        
+        # model_average_flux = model_average_flux[model_average_flux>=(1-cont_buffer)]
         
         ## okay, now we have these wavelength points, we should save them, load them into the continuum normalisation code
         ## then for each segmant grab these points
@@ -1775,30 +2034,30 @@ def find_best_val(ind_spec_arr):
         # w0_range_mg = [5524,5532] # Mg line
         w0_range_mg = [5390,5398] # Mn line
         
-        mask_solar_mg = (model_wvl_solar <= w0_range_mg[1]) & (model_wvl_solar >= w0_range_mg[0])
-        model_flux_solar_mg = model_flux_solar[mask_solar_mg]
-        model_wvl_solar_mg = model_wvl_solar[mask_solar_mg]
+        # mask_solar_mg = (model_wvl_solar <= w0_range_mg[1]) & (model_wvl_solar >= w0_range_mg[0])
+        # model_flux_solar_mg = model_flux_solar[mask_solar_mg]
+        # model_wvl_solar_mg = model_wvl_solar[mask_solar_mg]
         
-        mask_solar_poor_mg = (model_wvl_solar_poor <= w0_range_mg[1]) & (model_wvl_solar_poor >= w0_range_mg[0])
-        model_flux_solar_poor_mg = model_flux_solar_poor[mask_solar_poor_mg]
-        model_wvl_solar_poor_mg = model_wvl_solar_poor[mask_solar_poor_mg]
+        # mask_solar_poor_mg = (model_wvl_solar_poor <= w0_range_mg[1]) & (model_wvl_solar_poor >= w0_range_mg[0])
+        # model_flux_solar_poor_mg = model_flux_solar_poor[mask_solar_poor_mg]
+        # model_wvl_solar_poor_mg = model_wvl_solar_poor[mask_solar_poor_mg]
         
-        mask_RGB_mg = (model_wvl_RGB <= w0_range_mg[1]) & (model_wvl_RGB >= w0_range_mg[0])
-        model_flux_RGB_mg = model_flux_RGB[mask_RGB_mg]
-        model_wvl_RGB_mg = model_wvl_RGB[mask_RGB_mg]
+        # mask_RGB_mg = (model_wvl_RGB <= w0_range_mg[1]) & (model_wvl_RGB >= w0_range_mg[0])
+        # model_flux_RGB_mg = model_flux_RGB[mask_RGB_mg]
+        # model_wvl_RGB_mg = model_wvl_RGB[mask_RGB_mg]
         
-        mask_RGB_poor_mg = (model_wvl_RGB_poor <= w0_range_mg[1]) & (model_wvl_RGB_poor >= w0_range_mg[0])
-        model_flux_RGB_poor_mg = model_flux_RGB_poor[mask_RGB_poor_mg]
-        model_wvl_RGB_poor_mg = model_wvl_RGB_poor[mask_RGB_poor_mg]
+        # mask_RGB_poor_mg = (model_wvl_RGB_poor <= w0_range_mg[1]) & (model_wvl_RGB_poor >= w0_range_mg[0])
+        # model_flux_RGB_poor_mg = model_flux_RGB_poor[mask_RGB_poor_mg]
+        # model_wvl_RGB_poor_mg = model_wvl_RGB_poor[mask_RGB_poor_mg]
         
-        mask_average_mg = (model_average_wvl <= w0_range_mg[1]) & (model_average_wvl >= w0_range_mg[0])
-        model_average_flux_mg = model_average_flux[mask_average_mg]
-        model_average_wvl_mg = model_average_wvl[mask_average_mg] 
+        # mask_average_mg = (model_average_wvl <= w0_range_mg[1]) & (model_average_wvl >= w0_range_mg[0])
+        # model_average_flux_mg = model_average_flux[mask_average_mg]
+        # model_average_wvl_mg = model_average_wvl[mask_average_mg] 
         
         
-        mask_no_conv_mg = (wvl_corrected_no_conv <= w0_range_mg[1]) & (wvl_corrected_no_conv >= w0_range_mg[0])
-        obs_no_conv_mg = obs_no_conv[mask_no_conv_mg]
-        wvl_corrected_no_conv_mg = wvl_corrected_no_conv[mask_no_conv_mg]
+        # mask_no_conv_mg = (wvl_corrected_no_conv <= w0_range_mg[1]) & (wvl_corrected_no_conv >= w0_range_mg[0])
+        # obs_no_conv_mg = obs_no_conv[mask_no_conv_mg]
+        # wvl_corrected_no_conv_mg = wvl_corrected_no_conv[mask_no_conv_mg]
         
         
         fit_mg = fit[w0_new <= w0_range_mg[1]]
@@ -1817,7 +2076,7 @@ def find_best_val(ind_spec_arr):
 
         # ax_range_mg.plot(model_wvl_solar_mg,model_flux_solar_mg,'m-',linewidth=1,label='solar')
         # ax_range_mg.plot(model_wvl_RGB_mg,model_flux_RGB_mg,'g-',linewidth=1,label='RGB')
-        ax_range_mg.plot(model_wvl_solar_poor_mg,model_flux_solar_poor_mg,'r-',linewidth=1,label='solar poor')
+        # ax_range_mg.plot(model_wvl_solar_poor_mg,model_flux_solar_poor_mg,'r-',linewidth=1,label='solar poor')
         # ax_range_mg.plot(model_wvl_RGB_poor_mg,model_flux_RGB_poor_mg,'r-',linewidth=1,label='RGB poor')
 
         # ax_range_mg.plot(model_average_wvl_mg,model_average_flux_mg,marker='x',color='y',markersize=20,label='Cont Mask')
@@ -1825,7 +2084,7 @@ def find_best_val(ind_spec_arr):
         
         ax_range_mg.plot(w0_mg,fit_mg,'m-',linewidth=1,label='SAPP')
         ax_range_mg.plot(wvl_corrected_mg,obs_mg,marker='o',linestyle='none',color='k',markersize=4,label='obs')
-        ax_range_mg.plot(wvl_corrected_no_conv_mg,obs_no_conv_mg,marker='+',linestyle='none',color='b',markersize=4,label='obs -- R = UVES')
+        # ax_range_mg.plot(wvl_corrected_no_conv_mg,obs_no_conv_mg,marker='+',linestyle='none',color='b',markersize=4,label='obs -- R = UVES')
         
         ax_range_mg.set_xlabel("$\lambda$ [$\AA$]",fontsize=30)
         ax_range_mg.set_ylabel("Flux",fontsize=30)
@@ -1860,6 +2119,8 @@ def find_best_val(ind_spec_arr):
         w0_range_1 = [min(w0_new) + spectra_buffer,min(w0_new) + 1*(w0_range/3)]
         w0_range_2 = [min(w0_new) + 1*(w0_range/3),min(w0_new) + 2*(w0_range/3)]
         w0_range_3 = [min(w0_new) + 2*(w0_range/3),min(w0_new) + 3*(w0_range/3)]
+        
+        # print(w0_range_1,w0_range_2,w0_range_3)
         
         # ### split new models into 3 parts 
         
@@ -1982,7 +2243,7 @@ def find_best_val(ind_spec_arr):
         
         ### create 3 panel figure ###
         
-        fig2, ax_range = plt.subplots(3,1,figsize = (18,12))
+        fig2, ax_range = plt.subplots(3,1,figsize = (28,12))
         
         ax_range[0].axhline(y=1,linestyle='--',linewidth=2,color='lightgrey')
         ax_range[1].axhline(y=1,linestyle='--',linewidth=2,color='lightgrey')
@@ -2048,9 +2309,9 @@ def find_best_val(ind_spec_arr):
         ax_range[1].locator_params(axis="x", nbins=10)
         ax_range[2].locator_params(axis="x", nbins=10)        
         
-        # ax_range[0].set_ylim([0.3,1.1])
-        # ax_range[1].set_ylim([0.3,1.1])
-        # ax_range[2].set_ylim([0.7,1.1])
+        ax_range[0].set_ylim([0,1.1])
+        ax_range[1].set_ylim([0,1.1])
+        ax_range[2].set_ylim([0,1.1])
         
         plt.setp(ax_range[0].spines.values(), linewidth=3)
         plt.setp(ax_range[1].spines.values(), linewidth=3)
@@ -2098,7 +2359,8 @@ def find_best_val(ind_spec_arr):
 
         # ax_range[0].set_title(spec_name_title,fontsize=40)
         
-        spec_name_title = star_name_id + " " + spec_path.split("/")[-1].replace(".fits","")
+        # spec_name_title = star_name_id.split('/')[-1] + " " + spec_path.split("/")[-1].replace(".fits","")
+        spec_name_title = spec_path.split("/")[-1].replace(".fits","")
         
         ax_range[0].set_title(spec_name_title + f"\n {final}, {snr_star}",fontsize=40)
 
@@ -2110,11 +2372,31 @@ def find_best_val(ind_spec_arr):
 
         # fig2.savefig(f"../Output_figures/spec_comparison/aldo_test_{spec_name_title}.png") # whilst in main.py script
         # fig2.savefig(f"../Output_figures/spec_comparison/aldo_test_{spec_name_title}_Mg_line.png") # whilst in main.py script
-
-
+        
+        print(f"before saving:../Output_figures/spec_comparison/{star_name_id.split('/')[-1]}_OBS_test.pdf")
         plt.tight_layout()
+
+        fig2.savefig(f"../Output_figures/spec_comparison/{star_name_id.split('/')[-1]}_OBS_test{extra_save_string}.pdf") # whilst in main.py script
+
+        # plt.show()  
+        plt.close(fig2)
          
-        plt.show()        
+      
+        
+        
+        # fig3, ax_range2 = plt.subplots(1,1,figsize = (18,12))
+        # ax_range2.plot(wvl_corrected,obs,'k-',zorder=0)
+        # ax_range2.plot(wvl_corrected,obs,'bo',zorder=1)
+        # ax_range2.plot(wvl_corrected,fit,'m-',zorder=2)
+        # ax_range2.plot(wvl_corrected,usert,'g-',zorder=3)
+        # plt.show()
+        # fig3, ax_range2 = plt.subplots(1,1,figsize = (18,12))
+        # ax_range2.hist(wvl_corrected_orig,bins=1000,color='r',alpha=0.25,label='obs corrected')
+        # ax_range2.hist(www,bins=1000,color='m',alpha=0.25,label='w0 before ids')
+        # ax_range2.hist(w0_new,bins=1000,color='k',alpha=0.25,label='w0 after ids')
+        # # ax_range2.hist(wavelength,bins=1000,color='b',alpha=0.25,label='obs orig')
+        # ax_range2.legend(loc='lower right')
+        # plt.show()
         
         '''
         
@@ -2154,15 +2436,26 @@ def create_error_mask(error_mask_index,unique_params_arr,wavelength,observation,
         star_plot_tife = float(star_plot_other_lit_values[7])
         star_plot_mnfe = float(star_plot_other_lit_values[9])
         
-    labels_inp_star_plot = np.array([star_plot_temp/1000,\
+    # labels_inp_star_plot = np.array([star_plot_temp/1000,\
+    #                           star_plot_logg,\
+    #                           star_plot_feh,\
+    #                           star_plot_vmic,\
+    #                           star_plot_vsini,\
+    #                           star_plot_mgfe,\
+    #                           star_plot_tife,\
+    #                           star_plot_mnfe])
+
+    labels_inp_star_plot = np.hstack((star_plot_temp,\
                               star_plot_logg,\
                               star_plot_feh,\
-                              star_plot_vmic,\
-                              star_plot_vsini,\
-                              star_plot_mgfe,\
-                              star_plot_tife,\
-                              star_plot_mnfe])
-            
+                              0,\
+                              star_plot_mgfe+star_plot_feh,\
+                              0,\
+                              0,\
+                              star_plot_tife+star_plot_feh,\
+                              np.zeros([12]),\
+                              star_plot_mnfe+star_plot_feh,\
+                              np.zeros([12])))
     
     model = star_model(wavelength,labels_inp_star_plot,rv_shift)[1]
     
@@ -2275,10 +2568,13 @@ star_ids_bmk = PLATO_bmk_lit[:,0]
 PLATO_bmk_lit_other_params = np.loadtxt(Input_data_path + "Reference_data/PLATO_stars_lit_other_params.txt",dtype=str,delimiter=',')
 
 #name="NN_results_RrelsigL20.npz" #LTE
-name="NN_results_RrelsigN20.npz" #NLTE
+# name="NN_results_RrelsigN20.npz" #NLTE
+name="NN_results-smallhrs_62.npz" #LTE
+# name="NN_results_4most-full-hrs.npz" #LTE
+# name="NN_results-smalllrs_63.npz" #LTE
 
-LTE_type = "NLTE"
-#LTE_type = "LTE"
+# LTE_type = "NLTE"
+LTE_type = "LTE"
 
 import_path = Input_data_path + "spectroscopy_model_data/Payne_input_data/"
 
@@ -2292,13 +2588,85 @@ b_array_1 = temp["b_array_1"]
 b_array_2 = temp["b_array_2"]
 x_min = temp["x_min"]
 x_max = temp["x_max"]
+# print("grid limits",x_min,x_max)
 
 #number of parameters in Payne model
 num_labels=w_array_0.shape[1]
 
-#wavelength scale of the models
-w0=np.linspace(5329.,5616,11480)[40:-40]
-w0=w0[::2]
+# print(num_labels)
+
+#wavelength scale of the models, for HR10
+# w0=np.linspace(5329.,5616,11480)[40:-40]
+# w0=w0[::2]
+
+#wavelength scale of models, for 4MOST HRS
+www=temp["wvl"]#[ids]
+
+# print("sampling",www[1]-www[0],www[2]-www[1])
+
+w0=www.copy()
+
+# fig_w0 = plt.figure()
+# ax_w0 = fig_w0.add_subplot(111)
+# ax_w0.hist(w0,bins=1000)
+# plt.show()
+
+# HR10 and Halpha chip applied to model wavelength scale
+# ids=np.arange(0,len(w0))
+# ids1=(w0>=5330)*(w0<=5615)
+# ids2=(w0>=6543)*(w0<=6583)
+# ids=np.arange(len(w0))[ids1]
+# ids=np.append(ids,np.arange(len(w0))[ids2])
+# w0=w0[ids]
+
+# 4MOST chip
+# ids=np.arange(0,len(w0))
+# ids1=(w0>=3926)*(w0<=4350)
+# ids2=(w0>=5160)*(w0<=5730)
+# ids3=(w0>=6100)*(w0<=6788)
+# ids=np.arange(len(w0))[ids1]
+# ids=np.append(ids,np.arange(len(w0))[ids2])
+# ids=np.append(ids,np.arange(len(w0))[ids3])
+# w0=w0[ids]
+
+# alternative chip 1
+ids=np.arange(0,len(w0))
+ids1=(w0>=5160)*(w0<=5730)
+ids2=(w0>=6100)*(w0<=6788)
+ids=np.arange(len(w0))[ids1]
+ids=np.append(ids,np.arange(len(w0))[ids2])
+w0=w0[ids]
+
+#alternative chip 2
+# ids=np.arange(0,len(w0))
+# ids1=(w0>=3919.78)*(w0<=6790.00)
+# # ids2=(w0>=6100)*(w0<=6788)
+# ids=np.arange(len(w0))[ids1]
+# # ids=np.append(ids,np.arange(len(w0))[ids2])
+# w0=w0[ids]
+
+# 4MOST chip 2
+# ids=np.arange(0,len(w0))
+# ids1=(w0>=3937)*(w0<=4345)
+# # ids1=(w0>=4000)*(w0<=4345)
+# # ids1=(w0>=5160)*(w0<=4345)
+# # ids1=(w0>=3919.78)*(w0<=4345)
+# ids2=(w0>=5160)*(w0<=5730)
+# ids3=(w0>=6100)*(w0<=6788)
+# ids=np.arange(len(w0))[ids1]
+# ids=np.append(ids,np.arange(len(w0))[ids2])
+# ids=np.append(ids,np.arange(len(w0))[ids3])
+# w0=w0[ids]
+
+# 4MOST chip 3
+# ids=np.arange(0,len(w0))
+# ids1=(w0>=3919.78)*(w0<=4350.00)
+# ids2=(w0>=5060.93)*(w0<=5745.34)
+# ids3=(w0>=6100.00)*(w0<=6790.00)
+# ids=np.arange(len(w0))[ids1]
+# ids=np.append(ids,np.arange(len(w0))[ids2])
+# ids=np.append(ids,np.arange(len(w0))[ids3])
+# w0=w0[ids]
 
 #order of Chebyshev polynomials
 ### NEVER SET ABOVE ZERO
@@ -2311,14 +2679,19 @@ for i in range(cheb):
 gks=np.array(gks)
 gks=gks.T
 
+## making and saving solar star model
+# sun_wvl,sun_flux = star_model(w0,np.hstack((5777,4.44,0,np.zeros([num_labels-3]))),0)
+# np.savetxt("../Output_data/Stars_Lhood_spectroscopy/multiobs/sun/solar_4MOST_NN_model_save.txt",np.vstack((sun_wvl,sun_flux)).T,header="Wavelength/AA  Flux")
+
 
 ### MASKING ### 
  
 #to mask
-masking=False
+masking=True
 #lines to be masked in interval 0.751 around them
-wgd=np.array([5503.08,5577.34]) # bad lines example 
-
+# wgd=np.array([5503.08,5577.34]) # bad lines example 
+# wgd = 6270.63 6303.1
+wgd = np.arange(6270.63,6303.1+0.751,0.751)
 '''
 spec_path = "18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
 error_map_spec_path = "18_sco/ADP_18sco_snr396_HARPS_17.707g_error_synth_flag_True_cont_norm_convolved_hr10_.txt"
@@ -2369,14 +2742,4 @@ ind_spec_arr = [spec_path,\
                  stellar_name]
 find_best_val(ind_spec_arr)
 '''
-                                       
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+

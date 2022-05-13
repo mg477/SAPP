@@ -1,0 +1,75 @@
+# synthesis segments
+
+ # Blue Arm starts #
+ 3919.78 4050.00
+ 4050.00 4210.00
+ 4210.00 4350.00
+ # Blue Arm ends #
+
+ #4350.00 4805.00 
+ #4805.0 4835.0 # 30 A 
+ #4835.0 4895.0 # 60 A, H_beta (486.2 nm)
+ #4895.0 4927.0 # 30 A
+ #4927.0 4991.56 # 
+ #4991.56 5060.93 # 
+
+ # Green arm starts 5060.00
+ 5060.93 5118.2 # CHECK RED
+ 5118.2 5218.66 # Mg triplet (516, 517, 518.2 nm - must be fit together)
+ 5218.66 5252.48 #
+ 5252.48 5293.59 #
+ 5293.59 5331.91 #
+ 5331.91 5378.89 # begin HR10
+ 5378.89 5402.33 # 
+ 5402.33 5432.0 # blue edge of strong line
+ 5432.0 5468.9 # CHECK RED
+ 5468.9 5499.83 #
+ 5499.83 5537.32 #
+ 5537.32 5564.46 #
+ 5564.46 5606.53 # end HR10
+ 5606.53 5629.0 # CHECK RED
+ 5629.0 5664.91
+ 5664.91 5704.15 # the segment is a bit long# needs to be split
+ 5704.15 5745.34
+ # Green Arm ends 5730.00
+
+# 5745.34 5755.0 # end of this is a band...
+# 5755.0 5836.0 # NO DATA IN THIS BIN - CHECK, this is approximately the gap for UVES # smaller gap is here for HARPS as well approx 5800 - 5820
+# 5836.0 5871.95 # typo? Should it be 5836 # note changed 5636 to 5836 
+# 5871.95 5906.12 # Na doublet is at ~ 5890
+# 5906.12 5935.88
+# 5935.88 5958.87
+# 5958.87 5989.9
+# 5989.9 6025.93 
+# 6025.93 6055.65
+# #6055.65 6066.0 # NO DATA (BEAM SPLITTER GAP) 
+# #6070.30 6094.8 # CHECK BLUE # Maria said adjust this to 6074
+# 6055.65 6066.0 # 8 Angstrom gap here, need to either increase error or something
+# 6074.0 6094.8 
+# 6094.8 6130.3 # CHECK RED
+
+ # Red Arm starts 6100.00
+ 6100.00 6130.3
+ 6130.3 6159.0 #
+ 6159.0 6174.13
+ 6174.13 6188.65
+ 6188.65 6225.66
+ 6225.66 6248.53
+ 6248.53 6270.63
+ 6270.63 6303.1 # tellurics begin , O line
+ 6303.1 6325.95
+ 6325.95 6372.25 # Ca autoionization transitions (2)
+ 6372.25 6396.8
+ 6396.8 6435.6 # robust red edge
+ 6435.6 6460.0
+ 6460.0 6481.0
+ 6481.0 6498.083 # robust red edge
+ 6498.083 6520.5
+ 6520.5 6600.0 # Halpha (very broad line)
+ 6600.0 6659.9
+ 6659.9 6701.01
+ 6701.01 6723.5
+ 6723.50 6744.90
+# Red Arm ends 6788.00
+ 6744.90 6790.00
+#6723.5 6809.998 # UVES grid limit
