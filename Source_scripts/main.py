@@ -3154,9 +3154,7 @@ Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_
 flag_fails = np.zeros([len(Input_spec_data)])
 flag_no_rv = np.zeros([len(Input_spec_data)])
 
-
 correlation_arr = correlation_table(Input_spec_data,Input_phot_data)
-
 stellar_names = Input_phot_data[:,0]
 
 error_mask_recreate_bool =False # if False, then teff varying mask is assumed
