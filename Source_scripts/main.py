@@ -8,6 +8,8 @@ Created on Mon Oct 26 13:26:18 2020
 
 ### import python packages
 
+from astropy.io import fits as pyfits
+
 import numpy as np
 import multiprocessing as mp
 import os
@@ -15,12 +17,16 @@ import matplotlib.pyplot as plt
 import time
 from scipy.optimize import curve_fit
 from scipy.stats import iqr as IQR_SCIPY
+import traceback
+import SAPP_spectroscopy.Payne.astro_constants_cgs as astroc
 ### import SAPP scripts
 
-import os
-import psutil
 
-from SAPP_stellar_evolution_scripts.photometry_asteroseismology_lhood_TEST import photometry_asteroseismic_lhood_stellar_list as photometry_ast
+import os
+#import psutil
+
+from SAPP_stellar_evolution_scripts.photometry_asteroseismology_lhood_TEST import photometry_asteroseismic_lhood_stellar_list as photometry_ast_pdf
+from SAPP_stellar_evolution_scripts.asteroseismology_lhood_TEST import asteroseismic_lhood_stellar_list as ast_pdf
 import SAPP_spectroscopy.Payne.SAPP_best_spec_payne_v1p1 as mspec_new
 
 from SAPP_spectroscopy.Payne.SAPP_best_spec_payne_v1p1 import cheb
@@ -74,33 +80,60 @@ def correlation_table(spec_data_inp,phot_ast_data_inp):
     
     spec_IDs = spec_data_inp[:,0]
         
+    # correlation_arr = []
+    # for star in phot_ast_IDs: # going through each ro
+    #     # print("star =",star)
+    #     star_spec_list = []
+    #     for spec_index in range(len(spec_IDs)):
+    #         if spec_IDs[spec_index] == star:
+    #             star_spec_list.append(spec_index)
+    #         else: 
+    #             continue
+    #             # star_spec_list.append(np.nan)
+    #     star_spec_list = np.array(star_spec_list)
+    #     correlation_arr.append(star_spec_list)
+    # correlation_arr = np.array(correlation_arr)
+    
     correlation_arr = []
-    
-    for star in phot_ast_IDs: # going through each row
-    
-        # print("star =",star)
-        
-        star_spec_list = []
-        
-        for spec_index in range(len(spec_IDs)):
-                                    
-            if spec_IDs[spec_index] == star:
-                
-                star_spec_list.append(spec_index)
-                                                
-            else: 
-                
-                continue
-
-                # star_spec_list.append(np.nan)
-        
-        star_spec_list = np.array(star_spec_list)
-        
-        correlation_arr.append(star_spec_list)
-        
+    for i in range(len(phot_ast_IDs)):
+        spec_id_where = np.where(spec_IDs == phot_ast_IDs[i])[0]
+        if len(spec_id_where) > 0:
+            correlation_arr.append(spec_id_where)
+        else:
+            continue
     correlation_arr = np.array(correlation_arr)
     
     return correlation_arr
+
+def logg_numax(numax,nu_max_err,teff,teff_err):
+    """
+    Takes input numax value and teff to calculate logg using scaling relation
+    """
+    
+    
+    logg_numax = np.log10((numax/astroc.nu_max_sol) * (teff/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+    # logg_numax = np.log10((numax/astroc.nu_max_sol) * (teff/h5f_PLATO_consts['CGS/solar/Teff'][()]) ** 0.5 * astroc.surf_grav_sol)
+
+    # one way of calculating errors
+    # nu_max_iter_arr = [numax-nu_max_err,numax,numax+nu_max_err]
+    # logg_numax_lower = np.log10((nu_max_iter_arr[0]/astroc.nu_max_sol) * (teff/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+    # logg_numax_upper = np.log10((nu_max_iter_arr[2]/astroc.nu_max_sol) * (teff/astroc.teff_sol) ** 0.5 * astroc.surf_grav_sol)
+    # logg_numax_upper_err = logg_numax_upper - logg_numax
+    # logg_numax_lower_err = logg_numax - logg_numax_lower
+    # print("linear errors",logg_numax,logg_numax_upper_err,logg_numax_lower_err)
+    
+    dlogg_dnumax = 1/(np.log(10) * numax)
+    dlogg_dteff = 0.5/(np.log(10) * teff)
+    
+    # teff_err=0
+    
+    logg_numax_err = np.sqrt(abs(dlogg_dnumax)**2*(nu_max_err)**2 + abs(dlogg_dteff)**2*(teff_err)**2)
+    logg_numax_upper_err = logg_numax_err
+    logg_numax_lower_err = logg_numax_err
+    
+    # print("proper errors",logg_numax,logg_numax_lower_err,logg_numax_upper_err)
+    
+    return logg_numax,logg_numax_lower_err,logg_numax_upper_err
 
 def spectroscopy_stellar_track_collect(inp_arr,phot_param_space):
     
@@ -214,15 +247,22 @@ def spectroscopy_stellar_track_collect(inp_arr,phot_param_space):
     plt.show()
         
     '''
-    
-    print("Spectroscopic temperature error",best_params_err[0]*1000)
+
+    print("Spectroscopic temperature error",best_params_err[0])    
+    # print("Spectroscopic temperature error",best_params_err[0]*1000)
     print("Spectroscopic logg error",best_params_err[1])
     print("Spectroscopic feh error",best_params_err[2])
         
-    if best_params_err[0]*1000 < Teff_thresh:
-        teff_spec_err = best_params_err[0]*1000 + Teff_thresh + Teff_sys[1]
+    # if best_params_err[0]*1000 < Teff_thresh:
+    #     teff_spec_err = best_params_err[0]*1000 + Teff_thresh + Teff_sys[1]
+    # else:
+    #     teff_spec_err = best_params_err[0]*1000 + Teff_sys[1]
+
+    # 4MOST NN
+    if best_params_err[0] < Teff_thresh:
+        teff_spec_err = best_params_err[0] + Teff_thresh + Teff_sys[1]
     else:
-        teff_spec_err = best_params_err[0]*1000 + Teff_sys[1]
+        teff_spec_err = best_params_err[0] + Teff_sys[1]
         
     if best_params_err[1] < Logg_thresh:
         logg_spec_err = best_params_err[1] + Logg_thresh + Logg_sys[1]
@@ -248,8 +288,9 @@ def spectroscopy_stellar_track_collect(inp_arr,phot_param_space):
     
     params_fix = best_params[3:] # this still applies with new grid, however Magnesium's position changes as grid changes
     
-    MgFe = params_fix[2] # magnesium abundance hr10 grid
+    # MgFe = params_fix[2] # magnesium abundance hr10 grid
     # MgFe = params_fix[5] # magnesium abundance RVS grid 
+    MgFe = params_fix[1] # magnesium abundance 4MOST NN, converted when spec results saved 
         
     print("NUMBER OF POINTS",len(teff_phot))
     
@@ -260,7 +301,8 @@ def spectroscopy_stellar_track_collect(inp_arr,phot_param_space):
     start_time_spec_tracks = time.time()
 
     feh_de_enhance = feh_phot - (0.22/0.4 * (MgFe - MgFe_sys[0])) # this has [Mg/Fe] systematic applied
-    chi2_teff_i = (((best_params[0]*1000 - Teff_sys[0])-teff_phot)/(sigma_arr[0]))**2
+    # chi2_teff_i = (((best_params[0]*1000 - Teff_sys[0])-teff_phot)/(sigma_arr[0]))**2
+    chi2_teff_i = (((best_params[0] - Teff_sys[0])-teff_phot)/(sigma_arr[0]))**2 # 4MOST NN
     chi2_logg_i = (((best_params[1] - Logg_sys[0])-logg_phot)/(sigma_arr[1]))**2
     chi2_feh_i = (((best_params[2] - FeH_spec_sys[0])-feh_de_enhance)/(sigma_arr[2]))**2
     chi2_spec_second_arr = chi2_teff_i + chi2_logg_i + chi2_feh_i
@@ -270,7 +312,8 @@ def spectroscopy_stellar_track_collect(inp_arr,phot_param_space):
         ### creates chi2 grid sampling photometry space with best fit spec values while including co-variance
 
         # diff_vector = np.array([teff_phot[test_index]-(best_params[0]*1000),logg_phot[test_index]-best_params[1],feh_de_enhance[test_index] - 0.22/0.4 * MgFe_sys[0] -best_params[2]])
-        diff_vector = np.array([teff_phot[test_index]-(best_params[0]*1000 - Teff_sys[0]),logg_phot[test_index]-(best_params[1]-Logg_sys[0]),feh_de_enhance[test_index] - (best_params[2] - FeH_spec_sys[0]) ])
+        # diff_vector = np.array([teff_phot[test_index]-(best_params[0]*1000 - Teff_sys[0]),logg_phot[test_index]-(best_params[1]-Logg_sys[0]),feh_de_enhance[test_index] - (best_params[2] - FeH_spec_sys[0]) ])
+        diff_vector = np.array([teff_phot[test_index]-(best_params[0] - Teff_sys[0]),logg_phot[test_index]-(best_params[1]-Logg_sys[0]),feh_de_enhance[test_index] - (best_params[2] - FeH_spec_sys[0]) ]) # 4MOST NN
         product_1 = np.matmul(diff_vector,cov_matrix_norm_inv)
         chi2_spec_third = np.matmul(product_1,diff_vector.T)
         chi2_spec_third_arr.append(chi2_spec_third)
@@ -413,11 +456,11 @@ def spectroscopy_stellar_track_collect(inp_arr,phot_param_space):
                                 
     print(f"time elapsed --- {(time.time() - start_time_spec_tracks)/60} minutes ---")
     
-    pid = os.getpid()
-    py = psutil.Process(pid)
-    memoryUse = py.memory_info()[0]/2.**30
+    # pid = os.getpid()
+    # py = psutil.Process(pid)
+    # memoryUse = py.memory_info()[0]/2.**30
     
-    print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
+    # print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
 
 
     if save_spec_phot_param_space_bool:
@@ -676,9 +719,7 @@ def main_func_multi_obs(inp_index):
     phot_ast_limits = [Teff_resolution,logg_resolution,feh_resolution]
                                 
     ### spectroscopy INITIALISATION ###
-    
-    # so far just picking the first observation for each star
-    
+        
     # need to develop a system for multiple observations w.r.t. Bayesian scheme
     
     stellar_filename = stellar_names[inp_index].replace(" ","_")
@@ -687,11 +728,13 @@ def main_func_multi_obs(inp_index):
     # for spec_obs_number in range(1):
     # for spec_obs_number in range(len(Input_spec_data[:,0])):
         
-        # if  spec_obs_number !=4: ### TEMPORARY LINE
-        #     continue
+        if  spec_obs_number !=3: ### TEMPORARY LINE
+            continue
+
+        # if  spec_obs_number !=2: ### TEMPORARY LINE
+            # continue
         
         # if spec_obs_number !=0: ### TEMPORARY LINE
-                
                 # continue
 
         # if spec_obs_number ==0: ### TEMPORARY LINE
@@ -704,29 +747,38 @@ def main_func_multi_obs(inp_index):
         # if Input_spec_data[:,2][spec_obs_number] not in alphe_1d_red_spec_list: # checking to see if its in the good list
             
             # continue
+        
+        # if spec_obs_number == 0:
+        #     rv_shift_direct = -0.438750027
+        # elif spec_obs_number == 1:
+        #     rv_shift_direct = -0.458422036
+        # elif spec_obs_number == 2:
+        #     rv_shift_direct = -0.386287778
+        # elif spec_obs_number == 3:
+        #     rv_shift_direct = -176.9163404
+        # elif spec_obs_number == 4:
+        #     rv_shift_direct = -1.101655928
 
         
         print("\n+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
         print(f"Observation number {spec_obs_number + 1} for star {stellar_names[inp_index]} in spec mode: {mode_kw}")
         print("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n")
-   
+        
+        
+        
         # spec_type = Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]\
-        #             + "_" + str(spec_obs_number)
-        # # spec_path = Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
-        # spec_path = "../Input_data/spectroscopy_observation_data/PLATO_spectra/PLATO_spec/" + Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]+ "/" +Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
-        # # spec_path = "SAPP_spectroscopy/Payne/hr10_ges_spec_analysis/fit_files_ges_idr6/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
-        # error_map_spec_path = Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
-        # error_mask_index = inp_index
-        # nu_max = Input_ast_data[inp_index][1]
-        # nu_max_err = Input_ast_data[inp_index][2]
-        # # nu_max = np.nan#Input_ast_data[inp_index][1]
-        # # nu_max_err = np.nan#Input_ast_data[inp_index][2]
-        # numax_input_arr = [float(nu_max),float(nu_max_err),niter_numax_MAX]
-        # recalc_metals_inp = [spec_fix_values[0],spec_fix_values[1],spec_fix_values[2],feh_recalc_fix_bool]
-        # # logg_fix_load = np.loadtxt(f"../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/seismology_lhood_results/{stellar_filename}_seismic_logg.txt",dtype=str)
-        # # logg_fix_input_arr = [float(logg_fix_load[1]),float(logg_fix_load[2]),float(logg_fix_load[3])]
-        # logg_fix_input_arr = [np.nan,np.nan,np.nan]
-
+                    # + "_" + str(spec_obs_number)
+        # spec_path = Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
+        spec_path = "../Input_data/spectroscopy_observation_data/PLATO_spectra/PLATO_spec/" + Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]+ "/" +Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
+        # spec_path = "SAPP_spectroscopy/Payne/hr10_ges_spec_analysis/fit_files_ges_idr6/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
+        error_map_spec_path = Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
+        error_mask_index = inp_index
+        nu_max = Input_ast_data[inp_index][1]
+        nu_max_err = Input_ast_data[inp_index][2]
+        # nu_max = np.nan
+        # nu_max_err = np.nan
+        numax_input_arr = [float(nu_max),float(nu_max_err),niter_numax_MAX]
+        recalc_metals_inp = [spec_fix_values[0],spec_fix_values[1],spec_fix_values[2],feh_recalc_fix_bool]
         # spec_type = "GES_HR10"
         # # spec_type = Input_spec_data[:,1][inp_index]\
         # #             + "_" + str(spec_obs_number)
@@ -752,15 +804,20 @@ def main_func_multi_obs(inp_index):
         # # logg_fix_load = np.loadtxt(f"../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/seismology_lhood_results/{stellar_filename}_seismic_logg.txt",dtype=str)
         # logg_fix_input_arr = [np.nan,np.nan,np.nan]
 
-        spec_path = "../Input_data/spectroscopy_observation_data/PLATO_spectra/PLATO_spec/" + Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]+ "/" +Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
-        error_map_spec_path = "../Input_data/spectroscopy_observation_data/PLATO_spectra/PLATO_spec/" + Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]+ "/" +Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
-        error_mask_index = inp_index
-        nu_max = Input_ast_data[inp_index][1]
-        nu_max_err = Input_ast_data[inp_index][2]
-        numax_input_arr = [float(nu_max),float(nu_max_err),niter_numax_MAX]
-        recalc_metals_inp = [spec_fix_values[0],spec_fix_values[1],spec_fix_values[2],feh_recalc_fix_bool]
-        logg_fix_input_arr = [np.nan,np.nan,np.nan]
+        # spec_path = "../Input_data/spectroscopy_observation_data/PLATO_spectra/PLATO_spec/" + Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]+ "/" +Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
+        # error_map_spec_path = "../Input_data/spectroscopy_observation_data/PLATO_spectra/PLATO_spec/" + Input_spec_data[:,1][correlation_arr[inp_index][spec_obs_number]]+ "/" +Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
+        # error_mask_index = inp_index
+        # nu_max = Input_ast_data[inp_index][1]
+        # nu_max_err = Input_ast_data[inp_index][2]
+        # numax_input_arr = [float(nu_max),float(nu_max_err),niter_numax_MAX]
+        # recalc_metals_inp = [spec_fix_values[0],spec_fix_values[1],spec_fix_values[2],feh_recalc_fix_bool]
         
+        
+        """
+        Testing diff numax modes, right now these do not exist, so presume solar
+        """        
+        # if spec_obs_number == 1:
+        #     spec_path = "blahblah"
         
         spec_init_run = [spec_path,\
                     error_map_spec_path,\
@@ -778,741 +835,1225 @@ def main_func_multi_obs(inp_index):
                     logg_fix_bool,\
                     logg_fix_input_arr,\
                     [unique_emask_params_bool,unique_emask_params],\
-                    stellar_names[inp_index]]
+                    Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]].replace(".txt",""),\
+                    rv_shift_direct,\
+                    rv_shift_direct_err,\
+                    numax_first_step_logg,\
+                    extra_save_string] # use to just be stellar names 
 
-        if best_spec_bool == True:
+        try:
+        # if spec_obs_number >= 0: # remember to  put this back!
+            
+            if MSAP2_01_bool == True:
                 
-            # if spec_obs_number + 1 != 1:
+                """
+                --------
+                MSAP2-01
+                --------
                 
-            #     continue
+                Derive asteroseismic Logg using numax and or d_nu if seismic/granular logg isn't available
+                
+                """
+                
+                # Input_ast_data[inp_index][4:] = ['nan','nan','nan']
+                
+                # check for logg input 
+                # if logg given whilst logg_ast_bool = True, then it means logg from MSAP3 was given
+                
+                logg_ast_fix_flag = False
+                logg_msap2_01_mode = "none"
+                
+                if ~np.isnan(logg_fix_input_arr[0]):
+                    # then granular/seismic logg is given from MSAP3
+                    logg_ast_fix = logg_fix_input_arr[0]
+                    logg_ast_fix_upper_err = logg_fix_input_arr[1]
+                    logg_ast_fix_lower_err = logg_fix_input_arr[2]
                     
-            best_fit_spectroscopy = mspec_new.find_best_val(spec_init_run)
-            
-            best_spec_params = best_fit_spectroscopy[0]   
-            best_spec_params_err = best_fit_spectroscopy[1]   
-            
-            cov_matrix = best_fit_spectroscopy[11]   
-            
-            cov_matrix_new = cov_matrix[1:,1:]
+                    logg_msap2_01_mode = "msap4"
+                    
+                else:
+                    # Let SAPP calc seismic logg 
+                
+                    numax_val = float(Input_ast_data[inp_index][1])
+                    numax_val_err = float(Input_ast_data[inp_index][2])
+                    dnu_val = float(Input_ast_data[inp_index][4])
+                    
+                    
+                    
+                    if np.isnan(numax_val) and np.isnan(dnu_val):
+                        # i.e. there is no asteroseismic information and logg from MSAP3 was not given
+                        # this section shouldn't have run
                         
-            corr_matrix = correlation_from_covariance(cov_matrix_new) # correlation matrix
-            
-            wvl_corrected = best_fit_spectroscopy[5]
-            
-            obs_norm = best_fit_spectroscopy[6]
-            
-            usert_norm = best_fit_spectroscopy[10]
-            
-            wvl_obs_input = best_fit_spectroscopy[9]
-            
-            spectra_save = np.vstack((wvl_corrected,obs_norm,usert_norm)).T
-            
-            rv_shift_spec = best_fit_spectroscopy[3]
+                        print("DP3_128_DELTA_NU_AV, DP3_128_NU_MAX from MSAP3 and/or seismic IDP_123_LOGG_VARLC from MSAP4 not given")
+                        logg_ast_fix = np.nan
+                        logg_ast_fix_upper_err = np.nan
+                        logg_ast_fix_lower_err = np.nan
                         
-            """
-            Plot correlation matrix 
-            """
-            
-            '''
-            
-            ### finding the lower triangle ###
-            
-            low_tri_bool = np.tril(np.ones(np.shape(corr_matrix))).astype(np.bool)[0:8,0:8]
-            
-            # print(low_tri_bool)
-            
-            spectral_parameters_names = ["T$_{eff}$","log(g)","[Fe/H]","Vmic","Vbrd","[Mg/Fe]","[Ti/Fe]","[Mn/Fe]"]
-            
-            for i in range(len(spectral_parameters_names)):
-                for j in range(len(spectral_parameters_names)):
-                                        
-                    if low_tri_bool[i][j] == False:
+                        logg_ast_fix_flag = True
                         
-                        corr_matrix[i,j] = np.nan
+                    elif ~np.isnan(numax_val) and ~np.isnan(dnu_val):
+                        # we can calc ast_PDF
+                        
+                        # make [Fe/H] and Teff radii really small
+                        
+                        phot_ast_limits[0] = 100 # K
+                        phot_ast_limits[1] = 0.5 # dex
+                        phot_ast_limits[2] = 0.1 # dex
+                        
+                        if phot_ast_central_values_bool == False:
+                            
+                            ## Teff_SAPP, Logg_SAPP, FeH_SAPP from MSteSci1 would be used here.
+                            # for now, solar is picked 
+                
+                            phot_ast_central_values = [6583,3.99,0.04]
+                                    
+                        elif phot_ast_central_values_bool == True:
+                            
+                            phot_ast_central_values = phot_ast_central_values_arr
+                
+                        stellar_inp_ast = [stellar_names[inp_index],phot_ast_central_values,phot_ast_limits,star_field_names[inp_index],spec_obs_number,save_ast_space_bool,Input_ast_data[inp_index],extra_save_string]
+                                                            
+                        start_ast = time.time()    
+                        ast_param_space,ast_flag = ast_pdf(stellar_inp_ast)
+                        print(f"Asteroseismology calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_ast)/60} minutes --- ")    
+                        
+                        prob_ast_pdf = ast_param_space[:,3]
+                        logg_ast_pdf = ast_param_space[:,1]
+                                                
+                        if ~ast_flag:
+                            logg_ast_fix = np.average(logg_ast_pdf,weights=prob_ast_pdf)
+                            logg_ast_fix_upper_err = np.sqrt(np.average((logg_ast_pdf-np.average(logg_ast_pdf,weights=prob_ast_pdf))**2,weights=prob_ast_pdf))
+                            logg_ast_fix_lower_err = np.sqrt(np.average((logg_ast_pdf-np.average(logg_ast_pdf,weights=prob_ast_pdf))**2,weights=prob_ast_pdf))
+                            logg_msap2_01_mode = "ast_pdf"
+                                                        
+                        else:
+                            print("Ast PDF space empty, IDP_122_LOGG_SAPP_TMP set to NaN")
+                            logg_ast_fix = np.nan
+                            logg_ast_fix_upper_err = np.nan
+                            logg_ast_fix_lower_err = np.nan
+                            logg_ast_fix_flag = True
+                            
+                    elif ~np.isnan(numax_val) and np.isnan(dnu_val):
+                        
+                        # i.e. numax exists but delta nu does not
+                        # here we do start of iterative method
+                        
+                        # we would use Teff_SAPP here from MSteSci1
+                        # for now, setting to solar with arbitrary error
+                    
+                        logg_numax_arr = logg_numax(numax_val,numax_val_err,6583,47)
+                        logg_ast_fix = logg_numax_arr[0]
+                        logg_ast_fix_lower_err = logg_numax_arr[1]
+                        logg_ast_fix_upper_err = logg_numax_arr[2]
+                        logg_msap2_01_mode = "numax_iter"
+                        
+                    else: # this would be if only delta nu existed,wihtout numax? unlikely
+                        print("Only DP3_128_DELTA_NU_AV available, IDP_122_LOGG_SAPP_TMP set to NaN")
+                        logg_ast_fix = np.nan
+                        logg_ast_fix_upper_err = np.nan
+                        logg_ast_fix_lower_err = np.nan
+                        logg_ast_fix_flag = True
+                
+                if ~logg_ast_fix_flag:
+                    
+                    logg_ast_fix_save = np.array([logg_msap2_01_mode,logg_ast_fix,logg_ast_fix_lower_err,logg_ast_fix_upper_err],dtype=str)
+                    
+                    print("IDP_122_LOGG_SAPP_TMP",logg_ast_fix_save)
+                    
+                    stellar_filename = stellar_names[inp_index].replace(" ","_")
+                            
+                    directory_asteroseismology = star_field_names[inp_index] # name of directory is the name of the star
+                    directory_check = os.path.exists(f"../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology}")                    
+                    if  directory_check == True:                    
+                        print(f"../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology} directory exists")                        
+                    else:                        
+                        print(f"../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology} directory does not exist")                        
+                        os.makedirs(f"../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology}")                        
+                        print(f"../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology} directory has been created")
+                        
+                    np.savetxt(f'../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology}/MSAP2_01_logg_fix_{logg_msap2_01_mode}_{stellar_filename}_{extra_save_string}.txt',logg_ast_fix_save,fmt='%s',delimiter=",",\
+                               header='Logg_ast_fix_mode, IDP_122_LOGG_SAPP_TMP/dex, IDP_122_LOGG_SAPP_TMP_lower_err/dex, IDP_122_LOGG_SAPP_TMP_upper_err/dex')
 
-                        
-            fig, ax = plt.subplots()
-            im = ax.imshow(corr_matrix, vmin=-1, vmax=1)
-            
-            # We want to show all ticks...
-            ax.set_xticks(np.arange(len(spectral_parameters_names)))
-            ax.set_yticks(np.arange(len(spectral_parameters_names)))
-            # ... and label them with the respective list entries
-            ax.set_xticklabels(spectral_parameters_names)
-            ax.set_yticklabels(spectral_parameters_names)
-            
-            # Rotate the tick labels and set their alignment.
-            plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
-                 rotation_mode="anchor") 
-            
-            for i in range(len(spectral_parameters_names)):
-                for j in range(len(spectral_parameters_names)):
+            # print(best_spec_bool)
+
+            if best_spec_bool == True:
                     
-                    if np.isnan(corr_matrix[i, j]) == True:
+                # if spec_obs_number + 1 != 1:
+                    
+                #     continue
+            
+                if MSAP2_02_bool:
+                    """
+                    MSAP2-02 is just the spectroscopic module specialsed 
+                    It is run differently depending on how MSAP2-01 was ran
+                    If MSAP2-01 didn't run, this module will not run
+                    """
+                    
+                    stellar_filename = stellar_names[inp_index].replace(" ","_")
+                    directory_asteroseismology = star_field_names[inp_index] # name of directory is the name of the star                    
+                    
+                    try:
+                        logg_ast_fix_load = np.loadtxt(f'../Output_data/Stars_Lhood_asteroseismology/{directory_asteroseismology}/MSAP2_01_logg_fix_{MSAP2_01_test_case_kw}_{stellar_filename}_{extra_save_string}.txt',dtype=str,delimiter=",")
+                    except:
+                        raise FileNotFoundError("Could not load IDP_122_LOGG_SAPP_TMP from MSAP2-01")
                         
-                        continue
+                    logg_ast_fix_mode = logg_ast_fix_load[0]
+                    
+                    
+                    if logg_ast_fix_mode == "msap4" or logg_ast_fix_mode == "ast_pdf":
+                                                
+                        # fix logg mode with this logg
+                        spec_init_run[9] = False
+                        spec_init_run[13] = True
+                        spec_init_run[14] = [np.array(logg_ast_fix_load[1],dtype=float),\
+                                             np.array(logg_ast_fix_load[2],dtype=float),\
+                                             np.array(logg_ast_fix_load[3],dtype=float)]
+                        
+                        best_fit_spectroscopy = mspec_new.find_best_val(spec_init_run)
+                        
+                        
+                    elif logg_ast_fix_mode =="numax_iter":
+                        # numax iter method, but use this logg as the first step somehow
+                        # this is a very very very obtuse mode in numax
+                        # numax_first_step_logg = 
+                        spec_init_run[19] = [True,\
+                                             np.array(logg_ast_fix_load[1],dtype=float),\
+                                             np.array(logg_ast_fix_load[2],dtype=float),\
+                                             np.array(logg_ast_fix_load[3],dtype=float)]
+                        spec_init_run[9] = True
+                        spec_init_run[13] = False
+                        
+                        best_fit_spectroscopy = mspec_new.find_best_val(spec_init_run)
                     
                     else:
-                        
-                        text = ax.text(j, i, f"{corr_matrix[i, j]:.2f}",
-                               ha="center", va="center", color="k",fontsize=16)
-                        
-            # ax.set_title("$\delta$ Eri: Correlation Coefficient Table",fontsize=20)
-            ax.set_title("HD49933: Correlation Coefficient Table",fontsize=20)
-                        
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
+                        # i.e logg_ast_fix_mode =="none"
+                        # if none, then that means MSAP2-01 failed somewhere
+                        raise ValueError("IDP_122_LOGG_SAPP_TMP from MSAP2-01 failed at some point. Re-do and check MSAP2-01 step")
+                
+                else:
                     
-            cbar = ax.figure.colorbar(im, ax=ax,label="p",cax=cax)
-            cbar.ax.tick_params(labelsize=16)
-
-            plt.setp(ax.spines.values(), linewidth=0)
-            
-        
-            fig.tight_layout()
-            plt.show()
-            '''
-                                    
-            N_pixels = len(best_fit_spectroscopy[6])
-            N_params = len(best_spec_params)
-            spec_dof = abs(N_pixels - N_params) # degrees of freedom
-
-            stellar_filename = stellar_names[inp_index].replace(" ","_")
-    
-            # directory_spectroscopy = stellar_filename # name of directory is the name of the star
-            
-            directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
-            directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
-            
-            if  directory_check == True:
-            
-                print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory exists")
+                    # if MSAP2_02 bool false, then run normal spec by default
+   
+                    best_fit_spectroscopy = mspec_new.find_best_val(spec_init_run)
                 
-            else:
                 
-                print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory does not exist")
-                
-                os.makedirs(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
-                
-                print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory has been created")
-                    
-            best_spec_params = np.hstack((best_spec_params,spec_dof,rv_shift_spec))
-                    
-            ### Multiobs save
-
-    
-            ''
-            if np.isnan(float(nu_max)):
-            
-                np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',best_spec_params)
-                np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',best_spec_params_err)    
-                np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',cov_matrix)
-
-                if spectra_save_bool:
-                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',spectra_save,header="wavelength,flux,error")
-                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',wvl_obs_input,header="wavelength,flux,error")
-                    
-                
-
-            else:
-                
-                np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',best_spec_params)
-                np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',best_spec_params_err)    
-                np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',cov_matrix)
-
-                if spectra_save_bool:
-                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',spectra_save,header="wavelength,flux,error")
-                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',wvl_obs_input,header="wavelength,flux,error")
-            ''
-            pid = os.getpid()
-            py = psutil.Process(pid)
-            memoryUse = py.memory_info()[0]/2.**30
-            
-            print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
-
-        ### SPEC BEST VALUES MULTIOBS ###
-        
-        # These have assumed to be calculated IF the first spec mode has ran
-        
-        # if spec_obs_number + 1 >= 10: # temporary 
-            # if spec_obs_number >= 13: # temporary 
-                
-                # continue
-        directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
-        directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
-
-        if np.isnan(float(nu_max)):
-
-            best_spec_params = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace('_numax','')}{extra_save_string}.txt")
-            best_spec_params_err = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace('_numax','')}{extra_save_string}.txt")
-
-        else:
-
-            best_spec_params = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt")
-            best_spec_params_err = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt")
-            
-            
-        
-        ### photometry input    
-        
-        if phot_ast_track_bool == True:
-        
-            if phot_ast_central_values_bool == False:
-            
-                phot_ast_central_values = [best_spec_params[0]*1000,best_spec_params[1],best_spec_params[2]]
+                # print("check results",best_fit_spectroscopy)
                                 
-            elif phot_ast_central_values_bool == True:
+                best_spec_params = best_fit_spectroscopy[0]   
+                best_spec_params_err = best_fit_spectroscopy[1]   
                 
-                phot_ast_central_values = phot_ast_central_values_arr#[phot_ast_central_values_arr[0],phot_ast_central_values_arr[1],phot_ast_central_values_arr[2]]
+                cov_matrix = best_fit_spectroscopy[11]   
+                
+                cov_matrix_new = cov_matrix[1:,1:]
+                            
+                corr_matrix = correlation_from_covariance(cov_matrix_new) # correlation matrix
+                
+                wvl_corrected = best_fit_spectroscopy[5]
+                
+                obs_norm = best_fit_spectroscopy[6]
+                
+                usert_norm = best_fit_spectroscopy[10]
+                
+                fit_norm = best_fit_spectroscopy[7]
+                
+                wvl_obs_input = best_fit_spectroscopy[9]
+                
+                spectra_save = np.vstack((wvl_corrected,obs_norm,usert_norm,fit_norm)).T
+                
+                rv_shift_spec = best_fit_spectroscopy[3]
+                
+                """
+                Plot correlation matrix 
+                """
+                
+                '''
+                
+                ### finding the lower triangle ###
+                
+                low_tri_bool = np.tril(np.ones(np.shape(corr_matrix))).astype(np.bool)[0:8,0:8]
+                
+                # print(low_tri_bool)
+                
+                spectral_parameters_names = ["T$_{eff}$","log(g)","[Fe/H]","Vmic","Vbrd","[Mg/Fe]","[Ti/Fe]","[Mn/Fe]"]
+                
+                for i in range(len(spectral_parameters_names)):
+                    for j in range(len(spectral_parameters_names)):
+                                            
+                        if low_tri_bool[i][j] == False:
+                            
+                            corr_matrix[i,j] = np.nan
     
-            stellar_inp_phot = [stellar_names[inp_index],phot_ast_central_values,phot_ast_limits,star_field_names[inp_index],spec_obs_number,phot_magnitude_set,save_phot_space_bool,Input_phot_data[inp_index],Input_ast_data[inp_index],extra_save_string]
-                    
-            # if spec_obs_number == 0: # only need to do photometry once, multiple spec obs likely close enough, no need to repeat 
-            
-                # start_time_phot = time.time()
+                            
+                fig, ax = plt.subplots()
+                im = ax.imshow(corr_matrix, vmin=-1, vmax=1)
                 
-            start_phot = time.time()    
-            phot_param_space,phot_flag = photometry_ast(stellar_inp_phot)
-            print(f"Photometry and Asteroseismology calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_phot)/60} minutes --- ")    
+                # We want to show all ticks...
+                ax.set_xticks(np.arange(len(spectral_parameters_names)))
+                ax.set_yticks(np.arange(len(spectral_parameters_names)))
+                # ... and label them with the respective list entries
+                ax.set_xticklabels(spectral_parameters_names)
+                ax.set_yticklabels(spectral_parameters_names)
+                
+                # Rotate the tick labels and set their alignment.
+                plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+                     rotation_mode="anchor") 
+                
+                for i in range(len(spectral_parameters_names)):
+                    for j in range(len(spectral_parameters_names)):
+                        
+                        if np.isnan(corr_matrix[i, j]) == True:
+                            
+                            continue
+                        
+                        else:
+                            
+                            text = ax.text(j, i, f"{corr_matrix[i, j]:.2f}",
+                                   ha="center", va="center", color="k",fontsize=16)
+                            
+                # ax.set_title("$\delta$ Eri: Correlation Coefficient Table",fontsize=20)
+                ax.set_title("HD49933: Correlation Coefficient Table",fontsize=20)
+                            
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                        
+                cbar = ax.figure.colorbar(im, ax=ax,label="p",cax=cax)
+                cbar.ax.tick_params(labelsize=16)
+    
+                plt.setp(ax.spines.values(), linewidth=0)
+                
+            
+                fig.tight_layout()
+                plt.show()
+                '''
+                                        
+                N_pixels = len(best_fit_spectroscopy[6])
+                N_params = len(best_spec_params)
+                spec_dof = abs(N_pixels - N_params) # degrees of freedom
+    
+                stellar_filename = stellar_names[inp_index].replace(" ","_")
         
-            # print(f"photometry time = {time.time()-start_time_phot}")
-        
-            # if spec_obs_number == 0:
+                # directory_spectroscopy = stellar_filename # name of directory is the name of the star
                 
-                # this is because there is no point creating a photometry space for multiple spectra
-                # the spaces will be very similar in extent
-                # the only time this fails is if we have a bad spectra
-                # so in blind mode this makes sense as it can be very inconsistent
-                # but because the search range in photometry space is so large
-                # just create it once for the first observation
-                # you only need one set of central limits decided by spectroscopy.
+                directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
+                directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
                 
-            if phot_flag == False:
+                if  directory_check == True:
                 
-                # spec_track_bool = False
-                # bayes_scheme_bool = False
-                
-                print("Photometry failed due to empty parameter space")
-                print("-- due to central Teff, Logg, [Fe/H] values not existing in evo tracks")
-                
-                # for now, just fail it entirely
-                
-                # how do we save the flag?
-                
-                # because right now it means it'll just be missing from the final folder
-                
-                # np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
-                # np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_err_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined_err,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
-                
-                continue
-                
-                
-                
-                
-                # break                                                                                      
-
-        if spec_track_bool == True:
-
-            if np.isnan(float(nu_max)):
-            
-                cov_matrix = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt')
-
-                if spectra_save_bool:
-                    spectra_save = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt')
-                    obs_norm = spectra_save[:,1]
-                    usert_norm = spectra_save[:,2]                
-                    wvl_obs = spectra_save[:,0]
-                    wvl_obs_input = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt')
-                else:
-                    obs_norm = []
-                    usert_norm = []
-                    wvl_obs = []
-                    wvl_obs_input = []
-
-            else:
-                
-                cov_matrix = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt')
-
-            
-                if spectra_save_bool:
-                    spectra_save = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt')
-                    obs_norm = spectra_save[:,1]
-                    usert_norm = spectra_save[:,2]     
-                    wvl_obs = spectra_save[:,0]
-                    wvl_obs_input = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt')
-                else:
-                    obs_norm = []
-                    usert_norm = []
-                    wvl_obs = []
-                    wvl_obs_input = []
-
-            # best_fit_spectroscopy_input = [best_spec_params,best_spec_params_err,cov_matrix]
-            best_fit_spectroscopy_input = [best_spec_params,best_spec_params_err,cov_matrix,obs_norm,usert_norm,wvl_obs,wvl_obs_input,cheb]
- 
-            spec_extension = f"_OBS_NUM_{spec_obs_number+1}_SPEC_MODE_{mode_kw}"
-            stellar_inp_spec = [inp_index,best_fit_spectroscopy_input,star_field_names[inp_index],spec_extension,save_spec_phot_space_bool]
-    
-            start_spec = time.time()
-            
-            if save_phot_space_bool == True:
-                
-                phot_param_space = np.loadtxt(f'../Output_data/Stars_Lhood_photometry/{directory_spectroscopy}/stellar_track_collection_{stellar_filename}_OBS_NUM_{spec_obs_number + 1}_test_4_{extra_save_string}.txt',delimiter=",") 
-            
-            spec_phot_param_space = spectroscopy_stellar_track_collect(stellar_inp_spec,phot_param_space)
-            
-            print(f"Spectroscopy calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_spec)/60} minutes --- ")
-    
-    
-        if bayes_scheme_bool == True:
+                    print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory exists")
                     
-            ### load parameter space i.e. photometry, asteroseismology, spectroscopy, chi2 values
+                else:
+                    
+                    print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory does not exist")
+                    
+                    os.makedirs(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
+                    
+                    print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory has been created")
+                        
+                ## 4MOST abundances are [X/H] rather than [X/Fe]
+                # changes in the NN need to be changed more easily
             
-            if np.isnan(float(nu_max)):
+                spec_abundances = best_spec_params[3:]
+                
+                # convert abundances to [X/Fe] = [X/H] - [Fe/H]
+                spec_abundances = spec_abundances - best_spec_params[2]
+            
+                # best_spec_params = np.hstack((best_spec_params,spec_dof,rv_shift_spec)) # HR10
+                
+                # convert errors -> d[X/Fe] = (abs(-feh)**2 * dxh**2 + abs(xh)**2 * dfeh**2) ** 0.5
+                spec_abundances_errs = (abs(best_spec_params[2]) ** 2 * best_spec_params_err[2] ** 2 +\
+                                       abs(best_spec_params[3:]) ** 2 * best_spec_params_err[3:] ** 2) ** 0.5 
+                best_spec_params = np.hstack((best_spec_params[:3],spec_abundances,spec_dof,rv_shift_spec))    
+                best_spec_params_err = np.hstack((best_spec_params_err[:3],spec_abundances_errs))    
+                        
+                ### Multiobs save
+    
+        
+                ''
+                
+                if MSAP2_02_bool:
+                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',best_spec_params,\
+                               header="IDP_122_TEFF_SPECTROSCOPY/K, IDP_122_LOGG_SPECTROSCOPY/dex, [M/H]/dex, [K/Fe]/dex, [Mg/Fe]/dex, [Ba/Fe]/dex, [Al/Fe]/dex, [Ti/Fe]/dex, [Na/Fe]/dex, [Ca/Fe]/dex, [Ni/Fe]/dex, [Cu/Fe]/dex, [Co/Fe]/dex, [Cr/Fe]/dex, [Nd/Fe]/dex, [O/Fe]/dex, [Y/Fe]/dex, [Eu/Fe]/dex, [V/Fe]/dex, [Mo/Fe]/dex, [Mn/Fe]/dex, [Sc/Fe]/dex, [Si/Fe]/dex, [La/Fe]/dex, [Zn/Fe]/dex, [Sr/Fe]/dex, [Rb/Fe]/dex, [Zr/Fe]/dex, [Li/Fe]/dex, [Sm/Fe]/dex, [Ru/Fe]/dex, [Ce/Fe]/dex, [C/Fe]/dex, degrees_of_freedom, RV/Km/s")
+                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',best_spec_params_err,\
+                               header="IDP_122_TEFF_SPECTROSCOPY/K, IDP_122_LOGG_SPECTROSCOPY/dex, [M/H]/dex, [K/Fe]/dex, [Mg/Fe]/dex, [Ba/Fe]/dex, [Al/Fe]/dex, [Ti/Fe]/dex, [Na/Fe]/dex, [Ca/Fe]/dex, [Ni/Fe]/dex, [Cu/Fe]/dex, [Co/Fe]/dex, [Cr/Fe]/dex, [Nd/Fe]/dex, [O/Fe]/dex, [Y/Fe]/dex, [Eu/Fe]/dex, [V/Fe]/dex, [Mo/Fe]/dex, [Mn/Fe]/dex, [Sc/Fe]/dex, [Si/Fe]/dex, [La/Fe]/dex, [Zn/Fe]/dex, [Sr/Fe]/dex, [Rb/Fe]/dex, [Zr/Fe]/dex, [Li/Fe]/dex, [Sm/Fe]/dex, [Ru/Fe]/dex, [Ce/Fe]/dex, [C/Fe]/dex")
 
-                spec_extension = f"_OBS_NUM_{spec_obs_number+1}_SPEC_MODE_{mode_kw.replace('_numax','')}"
+                    np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',cov_matrix)
+    
+                    if spectra_save_bool:
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',spectra_save,header="wavelength,flux,error")
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',wvl_obs_input,header="wavelength,flux,error")
+                else:
+                    
+                    if np.isnan(float(nu_max)):
+                    
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',best_spec_params)
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',best_spec_params_err)    
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',cov_matrix)
+        
+                        if spectra_save_bool:
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',spectra_save,header="wavelength,flux,error")
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt',wvl_obs_input,header="wavelength,flux,error")
+                    else:
+                        
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',best_spec_params)
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',best_spec_params_err)    
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',cov_matrix)
+        
+                        if spectra_save_bool:
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',spectra_save,header="wavelength,flux,error")
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt',wvl_obs_input,header="wavelength,flux,error")
+                ''
+                # pid = os.getpid()
+                # py = psutil.Process(pid)
+                # memoryUse = py.memory_info()[0]/2.**30
                 
-            else:
+                # print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
+    
+            ### SPEC BEST VALUES MULTIOBS ###
+            
+            # These have assumed to be calculated IF the first spec mode has ran
+            
+            # if spec_obs_number + 1 >= 10: # temporary 
+                # if spec_obs_number >= 13: # temporary 
+                    
+                    # continue
                 
+                
+            if phot_ast_track_bool or spec_track_bool or bayes_scheme_bool or recalc_metals_scheme_bool:
+            
+                directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
+                directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
+        
+                if np.isnan(float(nu_max)):
+        
+                    best_spec_params = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace('_numax','')}{extra_save_string}.txt")
+                    best_spec_params_err = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace('_numax','')}{extra_save_string}.txt")
+        
+                else:
+        
+                    best_spec_params = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt")
+                    best_spec_params_err = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt")
+
+
+            if MSAP2_03_bool:
+               """
+               MSAP2-03 combines information from MSteSci1 and MSAP2 to derive a final set of SAPP parameters, this includes IRFM, SBCR, Interferometry etc
+               
+               For now the main algorithm is TBA due to the ocmplexity of shared inputs into a Bayesian scheme. 
+               
+               Thus, the temporary solution is simply a combination of results from MSAP2-02 and Teff_phot from MSteSci1. For testing we are choosing procyons parameters. 
+               
+               If MSAP2-03 is being run, then the extra_save_string exists specifically with _MSAP2 inside it. So, the spectroscopy loaded here by definition IS the one run from MSAP2-02.
+               """
+               directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
+               directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")
+
+               
+               best_spec_params = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace('_numax','')}{extra_save_string}.txt")
+               best_spec_params_err = np.loadtxt(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw.replace('_numax','')}{extra_save_string}.txt")
+
+               teff_MSAP2 = best_spec_params[0]
+               teff_MSAP2_err = best_spec_params_err[0]
+               logg_MSAP2 = best_spec_params[1]
+               logg_MSAP2_err = best_spec_params_err[1]
+               teff_phot = 6583
+               teff_phot_err = 47
+               
+               teff_range = np.linspace(6000,7000,1000)
+               
+               L_teff_phot  = np.exp(-(teff_phot-teff_range)**2/(2*(teff_phot_err)**2))
+               L_teff_spec = np.exp(-(teff_MSAP2-teff_range)**2/(2*(teff_MSAP2_err)**2))
+               
+               L_teff_MSAP3 = L_teff_phot * L_teff_spec
+               
+               teff_MSAP3 = np.average(teff_range,weights=L_teff_MSAP3)
+               teff_MSAP3_err = np.sqrt(np.average((teff_range-np.average(teff_range,weights=L_teff_MSAP3))**2,weights=L_teff_MSAP3))
+               
+               # now we have a combined teff from photometry and the new spectroscopy
+               # we have the new logg from spectroscopy
+               # last step is to re-calculate abundances
+               
+               # make sure both logg fix and numax are false, and that the first step numax wouldn't activate
+               # now, spectroscopy should be 'back' to normal
+               
+               spec_init_run[9] = False
+               spec_init_run[13] = False
+               spec_init_run[14] = [np.nan,np.nan,np.nan]
+               spec_init_run[19] = [False,[logg_MSAP2,logg_MSAP2_err,logg_MSAP2_err]]
+               spec_init_run[11] = True # this is recalc metals
+               spec_init_run[12] = [teff_MSAP3,logg_MSAP2,np.nan,False] # letting [Fe/H] be re-calculated
+               
+               spec_init_run[17] = best_spec_params[-1]
+               spec_init_run[18] = 0.05
+                
+                # still keep error masks however right?
+                
+                # need to pass on prev. RV information to save time... 
+                
+               extra_save_string_new = extra_save_string + "_recalc_met"
+                                
+               spec_init_run[20] = extra_save_string_new
+                
+                # print("spec_path",spec_path)
+                
+               best_fit_spectroscopy_recalc = mspec_new.find_best_val(spec_init_run)
+               best_spec_params_recalc = best_fit_spectroscopy_recalc[0]   
+               best_spec_params_recalc_err = best_fit_spectroscopy_recalc[1]  
+               
+               # add error from teff and logg in this re-calc
+               best_spec_params_recalc_err[0] = np.sqrt(best_spec_params_recalc_err[0]**2 + teff_MSAP3_err**2)
+               best_spec_params_recalc_err[1] = np.sqrt(best_spec_params_recalc_err[1]**2 + logg_MSAP2_err**2)
+               
+               cov_matrix_recalc = best_fit_spectroscopy_recalc[11] # how would one convert the cov matrix values?        
+               rv_shift_spec = best_fit_spectroscopy_recalc[3]
+               N_pixels = len(best_fit_spectroscopy_recalc[6])
+               N_params = len(best_spec_params_recalc)
+               spec_dof = abs(N_pixels - (N_params-2)) # degrees of freedom                        
+
+               ## metals have been re-calculated with new results.
+               
+               # for now, save these results in spectroscopy, they are the same as spec, but now they are new
+               # this immediately doubles the results.
+               
+               spec_abundances = best_spec_params_recalc[3:]
+                
+                # convert abundances to [X/Fe] = [X/H] - [Fe/H]
+               spec_abundances = spec_abundances - best_spec_params_recalc[2]
+            
+                # best_spec_params = np.hstack((best_spec_params,spec_dof,rv_shift_spec)) # HR10
+                
+                # convert errors -> d[X/Fe] = (abs(-feh)**2 * dxh**2 + abs(xh)**2 * dfeh**2) ** 0.5
+               spec_abundances_errs = (abs(best_spec_params_recalc[2]) ** 2 * best_spec_params_recalc_err[2] ** 2 +\
+                                       abs(best_spec_params_recalc[3:]) ** 2 * best_spec_params_recalc_err[3:] ** 2) ** 0.5 
+               best_spec_params = np.hstack((best_spec_params_recalc[:3],spec_abundances,spec_dof,rv_shift_spec))    
+               best_spec_params_err = np.hstack((best_spec_params_recalc_err[:3],spec_abundances_errs))    
+                               
+               directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
+               directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")                
+               if  directory_check == True:                
+                    print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory exists")                    
+               else:                    
+                    print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory does not exist")                    
+                    os.makedirs(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")                   
+                    print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory has been created")
+
+
+
+               
+               np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw}{extra_save_string_new}.txt',best_spec_params_recalc,\
+                      header="IDP_122_TEFF_SAPP/K, IDP_122_LOGG_SAPP/dex, [M/H]_SAPP/dex, [K/Fe]/dex, [Mg/Fe]/dex, [Ba/Fe]/dex, [Al/Fe]/dex, [Ti/Fe]/dex, [Na/Fe]/dex, [Ca/Fe]/dex, [Ni/Fe]/dex, [Cu/Fe]/dex, [Co/Fe]/dex, [Cr/Fe]/dex, [Nd/Fe]/dex, [O/Fe]/dex, [Y/Fe]/dex, [Eu/Fe]/dex, [V/Fe]/dex, [Mo/Fe]/dex, [Mn/Fe]/dex, [Sc/Fe]/dex, [Si/Fe]/dex, [La/Fe]/dex, [Zn/Fe]/dex, [Sr/Fe]/dex, [Rb/Fe]/dex, [Zr/Fe]/dex, [Li/Fe]/dex, [Sm/Fe]/dex, [Ru/Fe]/dex, [Ce/Fe]/dex, [C/Fe]/dex, degrees_of_freedom, RV/Km/s")
+               np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw}{extra_save_string_new}.txt',best_spec_params_recalc_err,\
+                      header="IDP_122_TEFF_SAPP/K, IDP_122_LOGG_SAPP/dex, [M/H]_SAPP/dex, [K/Fe]/dex, [Mg/Fe]/dex, [Ba/Fe]/dex, [Al/Fe]/dex, [Ti/Fe]/dex, [Na/Fe]/dex, [Ca/Fe]/dex, [Ni/Fe]/dex, [Cu/Fe]/dex, [Co/Fe]/dex, [Cr/Fe]/dex, [Nd/Fe]/dex, [O/Fe]/dex, [Y/Fe]/dex, [Eu/Fe]/dex, [V/Fe]/dex, [Mo/Fe]/dex, [Mn/Fe]/dex, [Sc/Fe]/dex, [Si/Fe]/dex, [La/Fe]/dex, [Zn/Fe]/dex, [Sr/Fe]/dex, [Rb/Fe]/dex, [Zr/Fe]/dex, [Li/Fe]/dex, [Sm/Fe]/dex, [Ru/Fe]/dex, [Ce/Fe]/dex, [C/Fe]/dex")
+               np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{MSAP2_01_test_case_kw}_{mode_kw}{extra_save_string_new}.txt',cov_matrix_recalc,\
+                      header='IDP_122_COVMAT_SAPP')
+
+            ### photometry input    
+            
+            if phot_ast_track_bool == True:
+            
+                if phot_ast_central_values_bool == False:
+                
+                    # phot_ast_central_values = [best_spec_params[0]*1000,best_spec_params[1],best_spec_params[2]]
+                    phot_ast_central_values = [best_spec_params[0],best_spec_params[1],best_spec_params[2]]
+                                    
+                elif phot_ast_central_values_bool == True:
+                    
+                    phot_ast_central_values = phot_ast_central_values_arr#[phot_ast_central_values_arr[0],phot_ast_central_values_arr[1],phot_ast_central_values_arr[2]]
+        
+                stellar_inp_phot = [stellar_names[inp_index],phot_ast_central_values,phot_ast_limits,star_field_names[inp_index],spec_obs_number,phot_magnitude_set,save_phot_space_bool,Input_phot_data[inp_index],Input_ast_data[inp_index],extra_save_string]
+                        
+                # if spec_obs_number == 0: # only need to do photometry once, multiple spec obs likely close enough, no need to repeat 
+                
+                    # start_time_phot = time.time()
+                    
+                start_phot = time.time()    
+                phot_param_space,phot_flag = photometry_ast_pdf(stellar_inp_phot)
+                print(f"Photometry and Asteroseismology calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_phot)/60} minutes --- ")    
+            
+                # print(f"photometry time = {time.time()-start_time_phot}")
+            
+                # if spec_obs_number == 0:
+                    
+                    # this is because there is no point creating a photometry space for multiple spectra
+                    # the spaces will be very similar in extent
+                    # the only time this fails is if we have a bad spectra
+                    # so in blind mode this makes sense as it can be very inconsistent
+                    # but because the search range in photometry space is so large
+                    # just create it once for the first observation
+                    # you only need one set of central limits decided by spectroscopy.
+                    
+                if phot_flag == False:
+                    
+                    # spec_track_bool = False
+                    # bayes_scheme_bool = False
+                    
+                    print("Photometry failed due to empty parameter space")
+                    print("-- due to central Teff, Logg, [Fe/H] values not existing in evo tracks")
+                    
+                    # for now, just fail it entirely
+                    
+                    # how do we save the flag?
+                    
+                    # because right now it means it'll just be missing from the final folder
+                    
+                    # np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
+                    # np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_err_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined_err,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
+                    
+                    continue
+                    
+                    
+                    
+                    
+                    # break                                                                                      
+    
+            if spec_track_bool == True:
+    
+                if np.isnan(float(nu_max)):
+                
+                    cov_matrix = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt')
+    
+                    if spectra_save_bool:
+                        spectra_save = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt')
+                        obs_norm = spectra_save[:,1]
+                        usert_norm = spectra_save[:,2]                
+                        wvl_obs = spectra_save[:,0]
+                        wvl_obs_input = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string}.txt')
+                    else:
+                        obs_norm = []
+                        usert_norm = []
+                        wvl_obs = []
+                        wvl_obs_input = []
+    
+                else:
+                    
+                    cov_matrix = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt')
+    
+                
+                    if spectra_save_bool:
+                        spectra_save = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt')
+                        obs_norm = spectra_save[:,1]
+                        usert_norm = spectra_save[:,2]     
+                        wvl_obs = spectra_save[:,0]
+                        wvl_obs_input = np.loadtxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string}.txt')
+                    else:
+                        obs_norm = []
+                        usert_norm = []
+                        wvl_obs = []
+                        wvl_obs_input = []
+    
+                # best_fit_spectroscopy_input = [best_spec_params,best_spec_params_err,cov_matrix]
+                best_fit_spectroscopy_input = [best_spec_params,best_spec_params_err,cov_matrix,obs_norm,usert_norm,wvl_obs,wvl_obs_input,cheb]
+     
                 spec_extension = f"_OBS_NUM_{spec_obs_number+1}_SPEC_MODE_{mode_kw}"
-                
-            
-            directory_photometry = star_field_names[inp_index]
-            
-            if save_spec_phot_space_bool == True:
-                
-                spec_phot_param_space = np.loadtxt(f'../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_photometry}/stellar_track_collection_w_spec_and_prob_{stellar_filename}_test_4{spec_extension}{extra_save_string}.txt',delimiter=",") 
-
-            param_space = spec_phot_param_space
-
-            teff  = param_space[:,0]
-            logg = param_space[:,1]
-            feh = param_space[:,2]
-            feh_spec = feh - (0.22/0.4 * (best_spec_params[5]-MgFe_sys[0]))
-            L_prob_mag = param_space[:,3]
-            L_prob_ast = param_space[:,4]
-            age = param_space[:,5]
-            mass = param_space[:,6]
-            radius = param_space[:,7]
-            age_step = param_space[:,8]
-            Luminosity = param_space[:,9]
-            L_prob_spec_2 = param_space[:,10] # without covariance
-            L_prob_spec_3 = param_space[:,11] # with covariance
-            
-            prob_mag_comb = L_prob_mag
-            
-            if spec_covariance_bool == True:
-                prob_spec_use = L_prob_spec_3                
-            else:                
-                prob_spec_use = L_prob_spec_2    
-            
-            # prob_ast = np.ones([len(prob_spec_use)])#L_prob_ast
-            prob_ast = L_prob_ast
-            
-            IMF_prior = mass ** (-2.35)
-            Age_prior = age_step
-            
-            prior_PDF = IMF_prior * Age_prior
-            
-
-            prob_input = prob_spec_use * prob_mag_comb * prior_PDF * prob_ast                                   
-            # prob_input = prob_spec_use * prob_ast * prob_mag_comb * prior_PDF
-            prob_input_name = "prob_comb_3_w_prob_priors"
-
-            # print("PROB_COMB_MAX",max(prob_input))
-            # print("PROB_SPEC_MAX",max(prob_spec_use))
-            # print("PROB_PHOT_MAX",max(prob_mag_comb))
-            # print("PROB_PRIOR_MAX",max(prior_PDF))
-
-            #saving complete PDF folder
-            
-            if save_final_space_bool:
-            
-                PDF_tot_save = np.vstack((teff,\
-                                        logg,\
-                                        feh,\
-                                        feh_spec,\
-                                        L_prob_mag,\
-                                        L_prob_ast,\
-                                        age ,\
-                                        mass ,\
-                                        radius ,\
-                                        age_step ,\
-                                        Luminosity ,\
-                                        L_prob_spec_2,\
-                                        L_prob_spec_3,\
-                                        prior_PDF)).T
-                
-                np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_photometry}/{stellar_filename}_OBS_NUM_{spec_obs_number + 1}_PDF_tot_test_{extra_save_string}.txt",PDF_tot_save,delimiter=",",fmt="%.5e",\
-                                header="Teff, Logg, feh, feh_spec, L_prob_phot, L_prob_ast, age/Myr, mass, radius, age_step/Myr, luminosity, chi2_prob_spec_no_cov, chi2_prob_spec_cov, prior_PDF")
-            
-                        
-            savefig_bool = False
-            makefig_bool = False
-                        
-            ### bins for distributions
-            
-            # teff_binwidth_prob_input = 25 # K
-            # logg_binwidth_prob_input = 0.025 # dex
-            # feh_binwidth_prob_input = 0.05 # dex
-            # feh_spec_binwidth_prob_input = 0.05 # dex
-            # age_binwidth_prob_input = 0.5#0.25 # Gyrs
-            # mass_binwidth_prob_input = 0.02 # Msol
-            # radius_binwidth_prob_input = 0.05 # Rsol
-            # lumin_binwidth_prob_input = 0.15 # Lsol
-
-            teff_binwidth_prob_input = 25 # K
-            logg_binwidth_prob_input = 0.01 # dex
-            feh_binwidth_prob_input = 0.05 # dex
-            feh_spec_binwidth_prob_input = 0.05 # dex
-            age_binwidth_prob_input = 0.25#0.25 # Gyrs
-            mass_binwidth_prob_input = 0.02 # Msol
-            radius_binwidth_prob_input = 0.025 # Rsol
-            lumin_binwidth_prob_input = 0.25 # Lsol
-            
-            ### probability array inputs to graph distributions
-
-            # prob_input_name_arr = ["Spec"]
-            # prob_input_arr = [prob_spec_use]
-            # prob_col_arr = ["tomato"]
-
+                stellar_inp_spec = [inp_index,best_fit_spectroscopy_input,star_field_names[inp_index],spec_extension,save_spec_phot_space_bool]
         
-            # prob_input_name_arr = ["Spectroscopy","Photometry+Parallax","ast"]
-            # prob_input_arr = [prob_spec_use,prob_mag_comb,prob_ast]
-            # prob_col_arr = ["deepskyblue","tomato","k","g"]
-            
-            # prob_input_name_arr = ["Combined_no_Spec","Combined","Spectroscopy"]
-            # prob_input_arr = [prob_input_without_spec,prob_input,prob_spec_use]
-            # prob_col_arr = ["deepskyblue","tomato","k"]
-            
-            prob_input_name_arr = ["Photometry+Parallax","Combined","Spectroscopy"]
-            prob_input_arr = [prob_mag_comb,prob_input,prob_spec_use]
-            prob_col_arr = ["k","deepskyblue","tomato"]
-            
-            # prob_input_name_arr_phillip = ["Spectroscopy (_so)","Photometry+Parallax","final (_wa)","Prior"]
-            # prob_input_arr_phillip = [prob_spec_use,prob_mag_comb,prob_input,prior_PDF]
-            prob_input_name_arr_phillip = ["Spectroscopy (_so)","Photometry Bp-Rp","final (_wa)","Ast"]
-            prob_input_arr_phillip = [prob_spec_use,prob_mag_comb,prob_input,prob_ast]
-            prob_col_arr_phillip = ["deepskyblue","tomato","k","g"]
-            path_phillip = f"../Output_figures/1d_distributions_no_histogram/{stellar_filename}.png"
-            param_binwidth_arr = [teff_binwidth_prob_input,\
-                                  logg_binwidth_prob_input,\
-                                  feh_spec_binwidth_prob_input,\
-                                  age_binwidth_prob_input,\
-                                  mass_binwidth_prob_input,\
-                                  radius_binwidth_prob_input,\
-                                  lumin_binwidth_prob_input]
-            
+                start_spec = time.time()
                 
-            if makefig_bool:
+                if save_phot_space_bool == True:
+                    
+                    phot_param_space = np.loadtxt(f'../Output_data/Stars_Lhood_photometry/{directory_spectroscopy}/stellar_track_collection_{stellar_filename}_OBS_NUM_{spec_obs_number + 1}_test_4_{extra_save_string}.txt',delimiter=",") 
                 
-                plot_pdf_all(prob_input_arr_phillip,prob_input_name_arr_phillip,prob_col_arr_phillip,teff,logg,feh_spec,age,mass,radius,Luminosity,path_phillip,param_binwidth_arr,directory_photometry)
- 
-            # Log_multiple_prob_distributions_1D(teff,prob_input_arr,"T$_{eff}$ [K]",teff_binwidth_prob_input,prob_input_name_arr,"temperature",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,1][inp_index]),ref_param_err = float(Ref_data[:,2][inp_index])) # 50
-            # Log_multiple_prob_distributions_1D(logg,prob_input_arr,"Logg [dex]",logg_binwidth_prob_input,prob_input_name_arr,"logg",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,3][inp_index]),ref_param_err = float(Ref_data[:,4][inp_index])) # 0.005
-            # Log_multiple_prob_distributions_1D(feh,prob_input_arr,"[Fe/H] [dex]",feh_binwidth_prob_input,prob_input_name_arr,"feh",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,5][inp_index]),ref_param_err = float(Ref_data[:,6][inp_index])) # 0.05
-            # Log_multiple_prob_distributions_1D(feh_spec,prob_input_arr,"[Fe/H] spec [dex]",feh_spec_binwidth_prob_input,prob_input_name_arr,"feh_spec",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,5][inp_index]),ref_param_err = float(Ref_data[:,6][inp_index]))    
-            # Log_multiple_prob_distributions_1D(age,prob_input_arr,"Age [Gyrs]",age_binwidth_prob_input,prob_input_name_arr,"age",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison") # 0.5
-            # Log_multiple_prob_distributions_1D(mass,prob_input_arr,"Mass [M$_\odot$]",mass_binwidth_prob_input,prob_input_name_arr,"mass",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison") # 0.02
-            # Log_multiple_prob_distributions_1D(radius,prob_input_arr,"Radius [R$_\odot$]",radius_binwidth_prob_input,prob_input_name_arr,"radius",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")
-            # Log_multiple_prob_distributions_1D(Luminosity,prob_input_arr,"Luminosity [L$_\odot$]",lumin_binwidth_prob_input,prob_input_name_arr,"lumin",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")
-
+                spec_phot_param_space = spectroscopy_stellar_track_collect(stellar_inp_spec,phot_param_space)
+                
+                print(f"Spectroscopy calculation for star {stellar_names[inp_index]} time elapsed --- {(time.time()-start_spec)/60} minutes --- ")
         
-            ### BEST FIT PARAMETER ESTIMATION via fitting Log(Gaussian) of PDF from prob_input
-            ''
+        
+            if bayes_scheme_bool == True:
+                        
+                ### load parameter space i.e. photometry, asteroseismology, spectroscopy, chi2 values
+                
+                if np.isnan(float(nu_max)):
+    
+                    spec_extension = f"_OBS_NUM_{spec_obs_number+1}_SPEC_MODE_{mode_kw.replace('_numax','')}"
+                    
+                else:
+                    
+                    spec_extension = f"_OBS_NUM_{spec_obs_number+1}_SPEC_MODE_{mode_kw}"
+                    
+                
+                directory_photometry = star_field_names[inp_index]
+                
+                if save_spec_phot_space_bool == True:
+                    
+                    spec_phot_param_space = np.loadtxt(f'../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_photometry}/stellar_track_collection_w_spec_and_prob_{stellar_filename}_test_4{spec_extension}{extra_save_string}.txt',delimiter=",") 
+    
+                param_space = spec_phot_param_space
+    
+                teff  = param_space[:,0]
+                logg = param_space[:,1]
+                feh = param_space[:,2]
+                # feh_spec = feh - (0.22/0.4 * (best_spec_params[5]-MgFe_sys[0])) # HR10 NN
+                feh_spec = feh - (0.22/0.4 * (best_spec_params[4]-MgFe_sys[0])) # 4MOST NN
+                L_prob_mag = param_space[:,3]
+                L_prob_ast = param_space[:,4]
+                age = param_space[:,5]
+                mass = param_space[:,6]
+                radius = param_space[:,7]
+                age_step = param_space[:,8]
+                Luminosity = param_space[:,9]
+                L_prob_spec_2 = param_space[:,10] # without covariance
+                L_prob_spec_3 = param_space[:,11] # with covariance
+                
+                prob_mag_comb = L_prob_mag
+                
+                if spec_covariance_bool == True:
+                    prob_spec_use = L_prob_spec_3                
+                else:                
+                    prob_spec_use = L_prob_spec_2    
+                
+                # prob_ast = np.ones([len(prob_spec_use)])#L_prob_ast
+                prob_ast = L_prob_ast
+                
+                IMF_prior = mass ** (-2.35)
+                Age_prior = age_step
+                
+                prior_PDF = IMF_prior * Age_prior
+                
+    
+                prob_input = prob_spec_use * prob_mag_comb * prior_PDF * prob_ast                                   
+                # prob_input = prob_spec_use * prob_ast * prob_mag_comb * prior_PDF
+                prob_input_name = "prob_comb_3_w_prob_priors"
+    
+                # print("PROB_COMB_MAX",max(prob_input))
+                # print("PROB_SPEC_MAX",max(prob_spec_use))
+                # print("PROB_PHOT_MAX",max(prob_mag_comb))
+                # print("PROB_PRIOR_MAX",max(prior_PDF))
+    
+                #saving complete PDF folder
+                
+                if save_final_space_bool:
+                
+                    PDF_tot_save = np.vstack((teff,\
+                                            logg,\
+                                            feh,\
+                                            feh_spec,\
+                                            L_prob_mag,\
+                                            L_prob_ast,\
+                                            age ,\
+                                            mass ,\
+                                            radius ,\
+                                            age_step ,\
+                                            Luminosity ,\
+                                            L_prob_spec_2,\
+                                            L_prob_spec_3,\
+                                            prior_PDF)).T
+                    
+                    np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_photometry}/{stellar_filename}_OBS_NUM_{spec_obs_number + 1}_PDF_tot_test_{extra_save_string}.txt",PDF_tot_save,delimiter=",",fmt="%.5e",\
+                                    header="Teff, Logg, feh, feh_spec, L_prob_phot, L_prob_ast, age/Myr, mass, radius, age_step/Myr, luminosity, chi2_prob_spec_no_cov, chi2_prob_spec_cov, prior_PDF")
+                
+                            
+                savefig_bool = False
+                makefig_bool = False 
+                            
+                ### bins for distributions
+                
+                # teff_binwidth_prob_input = 25 # K
+                # logg_binwidth_prob_input = 0.025 # dex
+                # feh_binwidth_prob_input = 0.05 # dex
+                # feh_spec_binwidth_prob_input = 0.05 # dex
+                # age_binwidth_prob_input = 0.5#0.25 # Gyrs
+                # mass_binwidth_prob_input = 0.02 # Msol
+                # radius_binwidth_prob_input = 0.05 # Rsol
+                # lumin_binwidth_prob_input = 0.15 # Lsol
+    
+                teff_binwidth_prob_input = 25 # K
+                logg_binwidth_prob_input = 0.01 # dex
+                feh_binwidth_prob_input = 0.05 # dex
+                feh_spec_binwidth_prob_input = 0.05 # dex
+                age_binwidth_prob_input = 0.25#0.25 # Gyrs
+                mass_binwidth_prob_input = 0.02 # Msol
+                radius_binwidth_prob_input = 0.025 # Rsol
+                lumin_binwidth_prob_input = 0.25 # Lsol
+                
+                ### probability array inputs to graph distributions
+    
+                # prob_input_name_arr = ["Spec"]
+                # prob_input_arr = [prob_spec_use]
+                # prob_col_arr = ["tomato"]
+    
+            
+                # prob_input_name_arr = ["Spectroscopy","Photometry+Parallax","ast"]
+                # prob_input_arr = [prob_spec_use,prob_mag_comb,prob_ast]
+                # prob_col_arr = ["deepskyblue","tomato","k","g"]
+                
+                # prob_input_name_arr = ["Combined_no_Spec","Combined","Spectroscopy"]
+                # prob_input_arr = [prob_input_without_spec,prob_input,prob_spec_use]
+                # prob_col_arr = ["deepskyblue","tomato","k"]
+                
+                prob_input_name_arr = ["Photometry+Parallax","Combined","Spectroscopy"]
+                prob_input_arr = [prob_mag_comb,prob_input,prob_spec_use]
+                prob_col_arr = ["k","deepskyblue","tomato"]
+                
+                # prob_input_name_arr_phillip = ["Spectroscopy (_so)","Photometry+Parallax","final (_wa)","Prior"]
+                # prob_input_arr_phillip = [prob_spec_use,prob_mag_comb,prob_input,prior_PDF]
+                prob_input_name_arr_phillip = ["Spectroscopy (_so)","Photometry Bp-Rp","final (_wa)","Ast"]
+                prob_input_arr_phillip = [prob_spec_use,prob_mag_comb,prob_input,prob_ast]
+                prob_col_arr_phillip = ["deepskyblue","tomato","k","g"]
+                path_phillip = f"../Output_figures/1d_distributions_no_histogram/{stellar_filename}.png"
+                param_binwidth_arr = [teff_binwidth_prob_input,\
+                                      logg_binwidth_prob_input,\
+                                      feh_spec_binwidth_prob_input,\
+                                      age_binwidth_prob_input,\
+                                      mass_binwidth_prob_input,\
+                                      radius_binwidth_prob_input,\
+                                      lumin_binwidth_prob_input]                
+                if makefig_bool:
+                    
+                    plot_pdf_all(prob_input_arr_phillip,prob_input_name_arr_phillip,prob_col_arr_phillip,teff,logg,feh_spec,age,mass,radius,Luminosity,path_phillip,param_binwidth_arr,directory_photometry)
+     
+                # Log_multiple_prob_distributions_1D(teff,prob_input_arr,"T$_{eff}$ [K]",teff_binwidth_prob_input,prob_input_name_arr,"temperature",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,1][inp_index]),ref_param_err = float(Ref_data[:,2][inp_index])) # 50
+                # Log_multiple_prob_distributions_1D(logg,prob_input_arr,"Logg [dex]",logg_binwidth_prob_input,prob_input_name_arr,"logg",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,3][inp_index]),ref_param_err = float(Ref_data[:,4][inp_index])) # 0.005
+                # Log_multiple_prob_distributions_1D(feh,prob_input_arr,"[Fe/H] [dex]",feh_binwidth_prob_input,prob_input_name_arr,"feh",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,5][inp_index]),ref_param_err = float(Ref_data[:,6][inp_index])) # 0.05
+                # Log_multiple_prob_distributions_1D(feh_spec,prob_input_arr,"[Fe/H] spec [dex]",feh_spec_binwidth_prob_input,prob_input_name_arr,"feh_spec",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")#,ref_param = float(Ref_data[:,5][inp_index]),ref_param_err = float(Ref_data[:,6][inp_index]))    
+                # Log_multiple_prob_distributions_1D(age,prob_input_arr,"Age [Gyrs]",age_binwidth_prob_input,prob_input_name_arr,"age",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison") # 0.5
+                # Log_multiple_prob_distributions_1D(mass,prob_input_arr,"Mass [M$_\odot$]",mass_binwidth_prob_input,prob_input_name_arr,"mass",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison") # 0.02
+                # Log_multiple_prob_distributions_1D(radius,prob_input_arr,"Radius [R$_\odot$]",radius_binwidth_prob_input,prob_input_name_arr,"radius",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")
+                # Log_multiple_prob_distributions_1D(Luminosity,prob_input_arr,"Luminosity [L$_\odot$]",lumin_binwidth_prob_input,prob_input_name_arr,"lumin",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,col_arr = prob_col_arr,extra_name = "spec_comparison")
+    
+            
+                ### BEST FIT PARAMETER ESTIMATION via fitting Log(Gaussian) of PDF from prob_input
+                ''
+                                        
+                # teff_fit = Log_prob_distributions_1D(teff,prob_input,"T$_{eff}$ [K]",teff_binwidth_prob_input,prob_input_name,"temperature",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 50
+                # logg_fit = Log_prob_distributions_1D(logg,prob_input,"Logg [dex]",logg_binwidth_prob_input,prob_input_name,"logg",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.005
+                # feh_fit = Log_prob_distributions_1D(feh,prob_input,"[Fe/H] [dex]",feh_binwidth_prob_input,prob_input_name,"feh",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.05
+                # feh_spec_fit = Log_prob_distributions_1D(feh_spec,prob_input,"[Fe/H] spec [dex]",feh_spec_binwidth_prob_input,prob_input_name,"feh_spec",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension)    
+                # age_fit = Log_prob_distributions_1D(age,prob_input,"Age [Gyrs]",age_binwidth_prob_input,prob_input_name,"age",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.5
+                # mass_fit = Log_prob_distributions_1D(mass,prob_input,"Mass [M$_\odot$]",mass_binwidth_prob_input,prob_input_name,"mass",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.02
+                # radius_fit = Log_prob_distributions_1D(radius,prob_input,"Radius [R$_\odot$]",radius_binwidth_prob_input,prob_input_name,"radius",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension)
+                # luminosity_fit = Log_prob_distributions_1D(Luminosity,prob_input,"Luminosity [L$_\odot$]",lumin_binwidth_prob_input,prob_input_name,"lumin",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension)
+                            
+                # print(teff_fit)
+                # print(logg_fit)
+                # print(feh_spec_fit)
+                
+                # print("prob input",max(prob_input),"prob_spec",max(prob_spec_use),"prob_phot",max(prob_mag_comb),"prior",max(prior_PDF),"ast",max(prob_ast))
+                
+                
+                if max(prob_input) == 0:
                                     
-            # teff_fit = Log_prob_distributions_1D(teff,prob_input,"T$_{eff}$ [K]",teff_binwidth_prob_input,prob_input_name,"temperature",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 50
-            # logg_fit = Log_prob_distributions_1D(logg,prob_input,"Logg [dex]",logg_binwidth_prob_input,prob_input_name,"logg",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.005
-            # feh_fit = Log_prob_distributions_1D(feh,prob_input,"[Fe/H] [dex]",feh_binwidth_prob_input,prob_input_name,"feh",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.05
-            # feh_spec_fit = Log_prob_distributions_1D(feh_spec,prob_input,"[Fe/H] spec [dex]",feh_spec_binwidth_prob_input,prob_input_name,"feh_spec",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension)    
-            # age_fit = Log_prob_distributions_1D(age,prob_input,"Age [Gyrs]",age_binwidth_prob_input,prob_input_name,"age",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.5
-            # mass_fit = Log_prob_distributions_1D(mass,prob_input,"Mass [M$_\odot$]",mass_binwidth_prob_input,prob_input_name,"mass",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension) # 0.02
-            # radius_fit = Log_prob_distributions_1D(radius,prob_input,"Radius [R$_\odot$]",radius_binwidth_prob_input,prob_input_name,"radius",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension)
-            # luminosity_fit = Log_prob_distributions_1D(Luminosity,prob_input,"Luminosity [L$_\odot$]",lumin_binwidth_prob_input,prob_input_name,"lumin",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool,savefig_extra_name = spec_extension)
+                    ## because this means that none of the distributions lead to a good final solution
+                    
+                    ## at this point we would inspect all of the distributions to see whats the problem
+                    
+                    ## however at this time, a quality control procedure doesn't exist
+                    
+                    ## likely the photometry is fine if the quality is good and reddening and distance is known
+                    
+                    ## so spectroscopy is probably messing up
+                    
+                    ## analyse the photometry solution only?
+                    
+                    ## eck it just depends
+                    
+                    ## spectra and phot could be bad for several reasons, as with asteroseismology
+                    
+                    ## for now, return NaNs
+                    
+                    teff_fit_wa = [np.nan,np.nan]
+                    logg_fit_wa = [np.nan,np.nan]
+                    feh_fit_wa = [np.nan,np.nan]
+                    feh_spec_fit_wa = [np.nan,np.nan]
+                    age_fit_wa = [np.nan,np.nan]
+                    mass_fit_wa = [np.nan,np.nan]
+                    radius_fit_wa = [np.nan,np.nan]
+                    luminosity_fit_wa = [np.nan,np.nan]
+                    
+                else:
+                
+                    teff_fit_wa = [np.average(teff,weights=prob_input),np.sqrt(np.average((teff-np.average(teff,weights=prob_input))**2,weights=prob_input))]
+                    logg_fit_wa = [np.average(logg,weights=prob_input),np.sqrt(np.average((logg-np.average(logg,weights=prob_input))**2,weights=prob_input))]
+                    feh_fit_wa = [np.average(feh,weights=prob_input),np.sqrt(np.average((feh-np.average(feh,weights=prob_input))**2,weights=prob_input))]
+                    feh_spec_fit_wa =[np.average(feh_spec,weights=prob_input),np.sqrt(np.average((feh_spec-np.average(feh_spec,weights=prob_input))**2,weights=prob_input))]        
+                    
+                    # PMS_split = 1 # 1 Gyr
+                    # age_MS = age[age >= PMS_split]
+                    # age_PMS = age[age<PMS_split]
+        
+                    # if len(age_MS) == 0:
                         
-            # print(teff_fit)
-            # print(logg_fit)
-            # print(feh_spec_fit)
-            
-            # print("prob input",max(prob_input),"prob_spec",max(prob_spec_use),"prob_phot",max(prob_mag_comb),"prior",max(prior_PDF),"ast",max(prob_ast))
-            
-            
-            if max(prob_input) == 0:
-                                
-                ## because this means that none of the distributions lead to a good final solution
-                
-                ## at this point we would inspect all of the distributions to see whats the problem
-                
-                ## however at this time, a quality control procedure doesn't exist
-                
-                ## likely the photometry is fine if the quality is good and reddening and distance is known
-                
-                ## so spectroscopy is probably messing up
-                
-                ## analyse the photometry solution only?
-                
-                ## eck it just depends
-                
-                ## spectra and phot could be bad for several reasons, as with asteroseismology
-                
-                ## for now, return NaNs
-                
-                teff_fit_wa = [np.nan,np.nan]
-                logg_fit_wa = [np.nan,np.nan]
-                feh_fit_wa = [np.nan,np.nan]
-                feh_spec_fit_wa = [np.nan,np.nan]
-                age_fit_wa = [np.nan,np.nan]
-                mass_fit_wa = [np.nan,np.nan]
-                radius_fit_wa = [np.nan,np.nan]
-                luminosity_fit_wa = [np.nan,np.nan]
-                
-            else:
-            
-                teff_fit_wa = [np.average(teff,weights=prob_input),np.sqrt(np.average((teff-np.average(teff,weights=prob_input))**2,weights=prob_input))]
-                logg_fit_wa = [np.average(logg,weights=prob_input),np.sqrt(np.average((logg-np.average(logg,weights=prob_input))**2,weights=prob_input))]
-                feh_fit_wa = [np.average(feh,weights=prob_input),np.sqrt(np.average((feh-np.average(feh,weights=prob_input))**2,weights=prob_input))]
-                feh_spec_fit_wa =[np.average(feh_spec,weights=prob_input),np.sqrt(np.average((feh_spec-np.average(feh_spec,weights=prob_input))**2,weights=prob_input))]        
-                
-                # PMS_split = 1 # 1 Gyr
-                # age_MS = age[age >= PMS_split]
-                # age_PMS = age[age<PMS_split]
-    
-                # if len(age_MS) == 0:
-                    
-                #     age_fit_MS_wa = [np.nan,np.nan]
-                    
-                # else:
-    
-                #     age_fit_MS_wa = [np.average(age_MS,weights=prob_input[age >= PMS_split]),np.sqrt(np.sum((age_MS - np.average(age_MS,weights=prob_input[age >= PMS_split]))**2)/(len(age_MS)-1))]
-    
-                
-                # if len(age_PMS) == 0:
-                    
-                #     age_fit_PMS_wa = [np.nan,np.nan]
-                    
-                # else:
-    
-                #     age_fit_PMS_wa = [np.average(age_PMS,weights=prob_input[age<PMS_split]),np.sqrt(np.sum((age_PMS - np.average(age_PMS,weights=prob_input[age<PMS_split]))**2)/(len(age_PMS)-1))]
-    
-                
-                # age_fit_wa = np.hstack((age_fit_PMS_wa,age_fit_MS_wa))
-                age_fit_wa = [np.average(age,weights=prob_input),np.sqrt(np.average((age-np.average(age,weights=prob_input))**2,weights=prob_input))]
-                mass_fit_wa = [np.average(mass,weights=prob_input),np.sqrt(np.average((mass-np.average(mass,weights=prob_input))**2,weights=prob_input))]
-                radius_fit_wa = [np.average(radius,weights=prob_input),np.sqrt(np.average((radius-np.average(radius,weights=prob_input))**2,weights=prob_input))]
-                luminosity_fit_wa = [np.average(Luminosity,weights=prob_input),np.sqrt(np.average((Luminosity-np.average(Luminosity,weights=prob_input))**2,weights=prob_input))]
-    
-                # print("hist fit",age_fit)
-                # print("whole wa fit",age_fit_whole_wa)
-                # print("wa fit",age_fit_wa)
-
-            ''
-            pid = os.getpid()
-            py = psutil.Process(pid)
-            memoryUse = py.memory_info()[0]/2.**30
-            
-            print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
-
-
-            ### BEST FIT PARAMETER ESTIMATION via fitting Gaussian of PDF from prob_input
-            
-            # teff_fit = prob_distributions_1D(teff,prob_input,"T$_{eff}$ [K]",teff_binwidth,prob_input_name,"temperature",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 50
-            # logg_fit = prob_distributions_1D(logg,prob_input,"Logg [dex]",logg_binwidth,prob_input_name,"logg",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.005
-            # feh_fit = prob_distributions_1D(feh,prob_input,"[Fe/H] [dex]",feh_binwidth,prob_input_name,"feh",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.05
-            # feh_spec_fit = prob_distributions_1D(feh_spec,prob_input,"[Fe/H] spec [dex]",feh_spec_binwidth,prob_input_name,"feh_spec",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool)    
-            # age_fit = prob_distributions_1D(age,prob_input,"Age [Gyrs]",age_binwidth,prob_input_name,"age",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.5
-            # mass_fit = prob_distributions_1D(mass,prob_input,"Mass [M$_\odot$]",mass_binwidth,prob_input_name,"mass",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.02
-            # radius_fit = prob_distributions_1D(radius,prob_input,"Radius [R$_\odot$]",radius_binwidth,prob_input_name,"radius",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool)
-                
-            ### Even with age_step prior there tends to be a probability of age in the PMS
-            ### we purposely select the second probability as that is what we are looking for.
-            
-            # mu_1_age = age_fit[0]
-            # sigma_1_age = age_fit[1]
-            # mu_2_age = age_fit[2]
-            # sigma_2_age = age_fit[3]
-                
-            # mu_age = mu_2_age
-            # sigma_age = sigma_2_age
-                
-            # age_fit = [mu_age,sigma_age]
-            
-            ### best params and errors to save for Teff, logg, [Fe/H], abundances, Mass, Age, Radius, Luminosity  -- HR10 grid ###
-            
-            # best_params_combined = [teff_fit[0],\
-            #                         logg_fit[0],\
-            #                         feh_fit[0],\
-            #                         feh_spec_fit[0],\
-            #                         best_spec_params[3],\
-            #                         best_spec_params[4],\
-            #                         best_spec_params[5]-MgFe_sys[0],\
-            #                         best_spec_params[6],\
-            #                         best_spec_params[7],\
-            #                         mass_fit[0],\
-            #                         age_fit[0],\
-            #                         radius_fit[0],\
-            #                         luminosity_fit[0]]
-
-            best_params_combined = [teff_fit_wa[0],\
-                                    logg_fit_wa[0],\
-                                    feh_fit_wa[0],\
-                                    feh_spec_fit_wa[0],\
-                                    best_spec_params[3],\
-                                    best_spec_params[4],\
-                                    best_spec_params[5]-MgFe_sys[0],\
-                                    best_spec_params[6],\
-                                    best_spec_params[7],\
-                                    mass_fit_wa[0],\
-                                    age_fit_wa[0],\
-                                    radius_fit_wa[0],\
-                                    luminosity_fit_wa[0]]
-
-                
-            best_params_combined = np.array(best_params_combined)
-            
-            print(best_params_combined)
-            
-            # best_params_combined_err = [teff_fit[1],\
-            #                             logg_fit[1],\
-            #                             feh_fit[1],\
-            #                             feh_spec_fit[1],\
-            #                             best_spec_params_err[3],\
-            #                             best_spec_params_err[4],\
-            #                             best_spec_params_err[5]+MgFe_sys[1],\
-            #                             best_spec_params_err[6],\
-            #                             best_spec_params_err[7],\
-            #                             mass_fit[1],\
-            #                             age_fit[1],\
-            #                             radius_fit[1],\
-            #                             luminosity_fit[1]]
-
-            best_params_combined_err = [teff_fit_wa[1],\
-                                        logg_fit_wa[1],\
-                                        feh_fit_wa[1],\
-                                        feh_spec_fit_wa[1],\
-                                        best_spec_params_err[3],\
-                                        best_spec_params_err[4],\
-                                        best_spec_params_err[5]+MgFe_sys[1],\
-                                        best_spec_params_err[6],\
-                                        best_spec_params_err[7],\
-                                        mass_fit_wa[1],\
-                                        age_fit_wa[1],\
-                                        radius_fit_wa[1],\
-                                        luminosity_fit_wa[1]]
-
-            
-            best_params_combined_err = np.array(best_params_combined_err)   
-            
-            print(best_params_combined_err)
-            
-            ''
-            ### best params and errors to save for Teff, logg, [Fe/H], abundances, Mass, Age, Radius, Luminosity  -- RVS grid ###
-            ''
-            # best_params_combined = [teff_fit[0],\
-            #                         logg_fit[0],\
-            #                         feh_fit[0],\
-            #                         feh_spec_fit[0],\
-            #                         best_spec_params[13],\
-            #                         best_spec_params[15],\
-            #                         best_spec_params[8],\
-            #                         best_spec_params[11],\
-            #                         best_spec_params[12],\
-            #                         mass_fit[0],\
-            #                         age_fit[0],\
-            #                         radius_fit[0],\
-            #                         luminosity_fit[0]]
-                
-            # best_params_combined = np.array(best_params_combined)
-            
-            
-            # best_params_combined_err = [(teff_fit[1] ** 2 + (best_spec_params_err[0]*1000)**2 + teff_binwidth_prob_input**2)**0.5,\
-            #                             (logg_fit[1] ** 2 + best_spec_params_err[1]**2 + logg_binwidth_prob_input**2)**0.5,\
-            #                             (feh_fit[1] ** 2 + best_spec_params_err[2]**2 + feh_binwidth_prob_input**2)**0.5,\
-            #                             (feh_spec_fit[1] ** 2 + best_spec_params_err[2]**2 + best_spec_params_err[5]**2 + feh_spec_binwidth_prob_input**2)**0.5,\
-            #                             best_spec_params_err[13],\
-            #                             best_spec_params_err[15],\
-            #                             best_spec_params_err[8],\
-            #                             best_spec_params_err[11],\
-            #                             best_spec_params_err[12],\
-            #                             (mass_fit[1]**2 + mass_binwidth_prob_input**2)**0.5,\
-            #                             (age_fit[1]**2 + age_binwidth_prob_input**2)**0.5,\
-            #                             (radius_fit[1]**2 + radius_binwidth_prob_input**2)**0.5,\
-            #                             (luminosity_fit[1]**2 + lumin_binwidth_prob_input**2)**0.5]
-            
-            # best_params_combined_err = np.array(best_params_combined_err)   
-
-            
-            ### best params and errors to save for Teff, logg, [Fe/H] and abundances ###
-            
-            # best_params_combined = [teff_fit[0],\
-            #                         logg_fit[0],\
-            #                         feh_fit[0],\
-            #                         feh_spec_fit[0],\
-            #                         best_spec_params[3],\
-            #                         best_spec_params[4],\
-            #                         best_spec_params[5],\
-            #                         best_spec_params[6],\
-            #                         best_spec_params[7]]
-                
-            # best_params_combined = np.array(best_params_combined)
-            
-            # # ref_params_combined = [Ref_data]
-            
-            # best_params_combined_err = [(teff_fit[1] ** 2 + (best_spec_params_err[0]*1000)**2 + teff_binwidth**2)**0.5,\
-            #                             (logg_fit[1] ** 2 + best_spec_params_err[1]**2 + logg_binwidth**2)**0.5,\
-            #                             (feh_fit[1] ** 2 + best_spec_params_err[2]**2 + feh_binwidth**2)**0.5,\
-            #                             (feh_spec_fit[1] ** 2 + best_spec_params_err[2]**2 + best_spec_params_err[5]**2 + feh_spec_binwidth**2)**0.5,\
-            #                             best_spec_params_err[3],\
-            #                             best_spec_params_err[4],\
-            #                             best_spec_params_err[5],\
-            #                             best_spec_params_err[6],\
-            #                             best_spec_params_err[7]]
-            
-            # best_params_combined_err = np.array(best_params_combined_err)   
-            
-            pid = os.getpid()
-            py = psutil.Process(pid)
-            memoryUse = py.memory_info()[0]/2.**30
-            
-            print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
-
-            
-            # directory_output = stellar_filename # name of directory is the name of the star
-            
-            directory_output = star_field_names[inp_index] # name of directory is the name of the star
-            directory_check = os.path.exists(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}")
-            
-            if  directory_check == True:
-            
-                print(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output} directory exists")
-                
-            else:
-                
-                print(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output} directory does not exist")
-                
-                os.makedirs(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}")
-                
-                print(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output} directory has been created")
+                    #     age_fit_MS_wa = [np.nan,np.nan]
+                        
+                    # else:
         
+                    #     age_fit_MS_wa = [np.average(age_MS,weights=prob_input[age >= PMS_split]),np.sqrt(np.sum((age_MS - np.average(age_MS,weights=prob_input[age >= PMS_split]))**2)/(len(age_MS)-1))]
         
-            if spec_covariance_bool == False: 
+                    
+                    # if len(age_PMS) == 0:
+                        
+                    #     age_fit_PMS_wa = [np.nan,np.nan]
+                        
+                    # else:
+        
+                    #     age_fit_PMS_wa = [np.average(age_PMS,weights=prob_input[age<PMS_split]),np.sqrt(np.sum((age_PMS - np.average(age_PMS,weights=prob_input[age<PMS_split]))**2)/(len(age_PMS)-1))]
+        
+                    
+                    # age_fit_wa = np.hstack((age_fit_PMS_wa,age_fit_MS_wa))
+                    age_fit_wa = [np.average(age,weights=prob_input),np.sqrt(np.average((age-np.average(age,weights=prob_input))**2,weights=prob_input))]
+                    mass_fit_wa = [np.average(mass,weights=prob_input),np.sqrt(np.average((mass-np.average(mass,weights=prob_input))**2,weights=prob_input))]
+                    radius_fit_wa = [np.average(radius,weights=prob_input),np.sqrt(np.average((radius-np.average(radius,weights=prob_input))**2,weights=prob_input))]
+                    luminosity_fit_wa = [np.average(Luminosity,weights=prob_input),np.sqrt(np.average((Luminosity-np.average(Luminosity,weights=prob_input))**2,weights=prob_input))]
+        
+                    # print("hist fit",age_fit)
+                    # print("whole wa fit",age_fit_whole_wa)
+                    # print("wa fit",age_fit_wa)
+    
+                ''
+                # pid = os.getpid()
+                # py = psutil.Process(pid)
+                # memoryUse = py.memory_info()[0]/2.**30
                 
-                # the initial spec calculation doesn't change if this bool is true or false, the PDF created changes
+                # print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
+    
+    
+                ### BEST FIT PARAMETER ESTIMATION via fitting Gaussian of PDF from prob_input
                 
-                # since we're just passing all the information, then the only thing which matters is save statements at the end
+                # teff_fit = prob_distributions_1D(teff,prob_input,"T$_{eff}$ [K]",teff_binwidth,prob_input_name,"temperature",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 50
+                # logg_fit = prob_distributions_1D(logg,prob_input,"Logg [dex]",logg_binwidth,prob_input_name,"logg",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.005
+                # feh_fit = prob_distributions_1D(feh,prob_input,"[Fe/H] [dex]",feh_binwidth,prob_input_name,"feh",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.05
+                # feh_spec_fit = prob_distributions_1D(feh_spec,prob_input,"[Fe/H] spec [dex]",feh_spec_binwidth,prob_input_name,"feh_spec",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool)    
+                # age_fit = prob_distributions_1D(age,prob_input,"Age [Gyrs]",age_binwidth,prob_input_name,"age",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.5
+                # mass_fit = prob_distributions_1D(mass,prob_input,"Mass [M$_\odot$]",mass_binwidth,prob_input_name,"mass",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool) # 0.02
+                # radius_fit = prob_distributions_1D(radius,prob_input,"Radius [R$_\odot$]",radius_binwidth,prob_input_name,"radius",makefig_bool=makefig_bool,savefig_bool=savefig_bool,stellar_id = stellar_filename,chisq_red_bool=chi_2_red_bool)
+                    
+                ### Even with age_step prior there tends to be a probability of age in the PMS
+                ### we purposely select the second probability as that is what we are looking for.
                 
-                # we calculate covariance and no covariance anyways, this just specifies at the final results
-
-                cov_save_string = "_no_spec_Cov"
+                # mu_1_age = age_fit[0]
+                # sigma_1_age = age_fit[1]
+                # mu_2_age = age_fit[2]
+                # sigma_2_age = age_fit[3]
+                    
+                # mu_age = mu_2_age
+                # sigma_age = sigma_2_age
+                    
+                # age_fit = [mu_age,sigma_age]
+                
+                ### best params and errors to save for Teff, logg, [Fe/H], abundances, Mass, Age, Radius, Luminosity  -- HR10 grid ###
+                
+                # best_params_combined = [teff_fit[0],\
+                #                         logg_fit[0],\
+                #                         feh_fit[0],\
+                #                         feh_spec_fit[0],\
+                #                         best_spec_params[3],\
+                #                         best_spec_params[4],\
+                #                         best_spec_params[5]-MgFe_sys[0],\
+                #                         best_spec_params[6],\
+                #                         best_spec_params[7],\
+                #                         mass_fit[0],\
+                #                         age_fit[0],\
+                #                         radius_fit[0],\
+                #                         luminosity_fit[0]]
+    
+                # 4MOST NN caused change of MgFe statement 
+    
+                best_params_combined = [teff_fit_wa[0],\
+                                        logg_fit_wa[0],\
+                                        feh_fit_wa[0],\
+                                        feh_spec_fit_wa[0],\
+                                        1,\
+                                        1,\
+    #                                    best_spec_params[5]-MgFe_sys[0],\
+                                        best_spec_params[4]-MgFe_sys[0],\
+                                        best_spec_params[7],\
+                                        best_spec_params[20],\
+                                        mass_fit_wa[0],\
+                                        age_fit_wa[0],\
+                                        radius_fit_wa[0],\
+                                        luminosity_fit_wa[0]]
+    
+                    
+                best_params_combined = np.array(best_params_combined)
+                
+                print("best_params_combined",best_params_combined)
+                
+                # best_params_combined_err = [teff_fit[1],\
+                #                             logg_fit[1],\
+                #                             feh_fit[1],\
+                #                             feh_spec_fit[1],\
+                #                             best_spec_params_err[3],\
+                #                             best_spec_params_err[4],\
+                #                             best_spec_params_err[5]+MgFe_sys[1],\
+                #                             best_spec_params_err[6],\
+                #                             best_spec_params_err[7],\
+                #                             mass_fit[1],\
+                #                             age_fit[1],\
+                #                             radius_fit[1],\
+                #                             luminosity_fit[1]]
+    
+                best_params_combined_err = [teff_fit_wa[1],\
+                                            logg_fit_wa[1],\
+                                            feh_fit_wa[1],\
+                                            feh_spec_fit_wa[1],\
+                                            0.05,\
+                                            0.05,\
+                                            # best_spec_params_err[5]+MgFe_sys[1],\
+                                            best_spec_params_err[4]+MgFe_sys[1],\
+                                            best_spec_params_err[7],\
+                                            best_spec_params_err[20],\
+                                            mass_fit_wa[1],\
+                                            age_fit_wa[1],\
+                                            radius_fit_wa[1],\
+                                            luminosity_fit_wa[1]]
+    
+                
+                best_params_combined_err = np.array(best_params_combined_err)   
+                
+                print("best_params_combined_err",best_params_combined_err)
+                
+                ''
+                ### best params and errors to save for Teff, logg, [Fe/H], abundances, Mass, Age, Radius, Luminosity  -- RVS grid ###
+                ''
+                # best_params_combined = [teff_fit[0],\
+                #                         logg_fit[0],\
+                #                         feh_fit[0],\
+                #                         feh_spec_fit[0],\
+                #                         best_spec_params[13],\
+                #                         best_spec_params[15],\
+                #                         best_spec_params[8],\
+                #                         best_spec_params[11],\
+                #                         best_spec_params[12],\
+                #                         mass_fit[0],\
+                #                         age_fit[0],\
+                #                         radius_fit[0],\
+                #                         luminosity_fit[0]]
+                    
+                # best_params_combined = np.array(best_params_combined)
+                
+                
+                # best_params_combined_err = [(teff_fit[1] ** 2 + (best_spec_params_err[0]*1000)**2 + teff_binwidth_prob_input**2)**0.5,\
+                #                             (logg_fit[1] ** 2 + best_spec_params_err[1]**2 + logg_binwidth_prob_input**2)**0.5,\
+                #                             (feh_fit[1] ** 2 + best_spec_params_err[2]**2 + feh_binwidth_prob_input**2)**0.5,\
+                #                             (feh_spec_fit[1] ** 2 + best_spec_params_err[2]**2 + best_spec_params_err[5]**2 + feh_spec_binwidth_prob_input**2)**0.5,\
+                #                             best_spec_params_err[13],\
+                #                             best_spec_params_err[15],\
+                #                             best_spec_params_err[8],\
+                #                             best_spec_params_err[11],\
+                #                             best_spec_params_err[12],\
+                #                             (mass_fit[1]**2 + mass_binwidth_prob_input**2)**0.5,\
+                #                             (age_fit[1]**2 + age_binwidth_prob_input**2)**0.5,\
+                #                             (radius_fit[1]**2 + radius_binwidth_prob_input**2)**0.5,\
+                #                             (luminosity_fit[1]**2 + lumin_binwidth_prob_input**2)**0.5]
+                
+                # best_params_combined_err = np.array(best_params_combined_err)   
+    
+                ### best params and errors to save for Teff, logg, [Fe/H] and abundances ###
+                
+                # best_params_combined = [teff_fit[0],\
+                #                         logg_fit[0],\
+                #                         feh_fit[0],\
+                #                         feh_spec_fit[0],\
+                #                         best_spec_params[3],\
+                #                         best_spec_params[4],\
+                #                         best_spec_params[5],\
+                #                         best_spec_params[6],\
+                #                         best_spec_params[7]]
+                    
+                # best_params_combined = np.array(best_params_combined)
+                
+                # # ref_params_combined = [Ref_data]
+                
+                # best_params_combined_err = [(teff_fit[1] ** 2 + (best_spec_params_err[0]*1000)**2 + teff_binwidth**2)**0.5,\
+                #                             (logg_fit[1] ** 2 + best_spec_params_err[1]**2 + logg_binwidth**2)**0.5,\
+                #                             (feh_fit[1] ** 2 + best_spec_params_err[2]**2 + feh_binwidth**2)**0.5,\
+                #                             (feh_spec_fit[1] ** 2 + best_spec_params_err[2]**2 + best_spec_params_err[5]**2 + feh_spec_binwidth**2)**0.5,\
+                #                             best_spec_params_err[3],\
+                #                             best_spec_params_err[4],\
+                #                             best_spec_params_err[5],\
+                #                             best_spec_params_err[6],\
+                #                             best_spec_params_err[7]]
+                
+                # best_params_combined_err = np.array(best_params_combined_err)   
+                
+                # pid = os.getpid()
+                # py = psutil.Process(pid)
+                # memoryUse = py.memory_info()[0]/2.**30
+                
+                # print("Memory = {} GB, CPU usage = {} %".format(memoryUse,psutil.cpu_percent()))
+    
+                
+                # directory_output = stellar_filename # name of directory is the name of the star
+                
+                directory_output = star_field_names[inp_index] # name of directory is the name of the star
+                directory_check = os.path.exists(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}")
+                
+                if  directory_check == True:
+                
+                    print(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output} directory exists")
+                    
+                else:
+                    
+                    print(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output} directory does not exist")
+                    
+                    os.makedirs(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}")
+                    
+                    print(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output} directory has been created")
             
-            elif spec_covariance_bool == True:
-                
-                cov_save_string = ""
-
-
-            np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
-            np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_err_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined_err,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
-            ''
-            ''
             
+                if spec_covariance_bool == False: 
+                    
+                    # the initial spec calculation doesn't change if this bool is true or false, the PDF created changes
+                    
+                    # since we're just passing all the information, then the only thing which matters is save statements at the end
+                    
+                    # we calculate covariance and no covariance anyways, this just specifies at the final results
+    
+                    cov_save_string = "_no_spec_Cov"
+                
+                elif spec_covariance_bool == True:
+                    
+                    cov_save_string = ""
+    
+    
+                np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
+                np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_err_{stellar_filename}{spec_extension}{extra_save_string}{cov_save_string}.txt",best_params_combined_err,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
+                
+                if recalc_metals_scheme_bool:
+                    
+                    print("re-calculating metals based on bayesian scheme")
+                                                    
+                    rv_shift = best_spec_params[-1]
+                    rv_shift_err = 0.05
+                    
+                    # still keep error masks however right?
+                    
+                    # need to pass on prev. RV information to save time... 
+                    
+                    extra_save_string_new = extra_save_string + "_recalc_met"
+                                                        
+                    spec_init_run = [spec_path,\
+                                error_map_spec_path,\
+                                error_mask_index,\
+                                error_mask_recreate_bool,\
+                                error_map_use_bool,\
+                                cont_norm_bool,\
+                                rv_shift_recalc,\
+                                conv_instrument_bool,\
+                                input_spec_resolution,\
+                                False,\
+                                numax_input_arr,\
+                                True,\
+                                [best_params_combined[0],\
+                                 best_params_combined[1],\
+                                 best_params_combined[3],\
+                                 False],\
+                                logg_fix_bool,\
+                                logg_fix_input_arr,\
+                                [unique_emask_params_bool,unique_emask_params],\
+                                Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]].replace(".txt",""),\
+                                rv_shift,\
+                                rv_shift_err,\
+                                [False,[np.nan,np.nan,np.nan]]] # use to just be stellar names 
+    
+                    best_fit_spectroscopy_recalc = mspec_new.find_best_val(spec_init_run)
+                    best_spec_params_recalc = best_fit_spectroscopy_recalc[0]   
+                    best_spec_params_recalc_err = best_fit_spectroscopy_recalc[1]   
+                    
+                    rv_shift_spec = best_fit_spectroscopy_recalc[3]
+                    N_pixels = len(best_fit_spectroscopy_recalc[6])
+                    N_params = len(best_spec_params_recalc)
+                    spec_dof = abs(N_pixels - (N_params-2)) # degrees of freedom                        
+    
+                    spec_abundances = best_spec_params_recalc[3:]
+                    # convert abundances to [X/Fe] = [X/H] - [Fe/H]
+                    spec_abundances = spec_abundances - best_spec_params_recalc[2]          
+                    # best_spec_params = np.hstack((best_spec_params,spec_dof,rv_shift_spec)) # HR10              
+                    # convert errors -> d[X/Fe] = (abs(-feh)**2 * dxh**2 + abs(xh)**2 * dfeh**2) ** 0.5
+                    spec_abundances_errs = (abs(best_spec_params_recalc[2]) ** 2 * best_spec_params_recalc_err[2] ** 2 +\
+                                           abs(best_spec_params_recalc[3:]) ** 2 * best_spec_params_recalc_err[3:] ** 2) ** 0.5 
+                    best_spec_params_recalc = np.hstack((best_spec_params_recalc[:3],spec_abundances,spec_dof,rv_shift_spec))    
+                    best_spec_params_recalc_err = np.hstack((best_spec_params_recalc_err[:3],spec_abundances_errs))    
+    
+                    cov_matrix_recalc = best_fit_spectroscopy_recalc[11] # how would one convert the cov matrix values?        
+                    wvl_corrected_recalc = best_fit_spectroscopy_recalc[5]            
+                    obs_norm_recalc = best_fit_spectroscopy_recalc[6]                
+                    usert_norm_recalc = best_fit_spectroscopy_recalc[10]                
+                    fit_norm_recalc = best_fit_spectroscopy_recalc[7]                
+                    wvl_obs_input_recalc = best_fit_spectroscopy_recalc[9]                
+                    spectra_save_recalc = np.vstack((wvl_corrected_recalc,obs_norm_recalc,usert_norm_recalc,fit_norm_recalc)).T
+    
+                    # The cov matrix used in the cov step is using MgFe converted but the covariance values for teff, logg, feh --> wait, only those... doesn't use the other dimesnions right?
+    
+                    if numax_iter_bool:
+                    
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string_new}.txt',best_spec_params_recalc)
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string_new}.txt',best_spec_params_recalc_err)    
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string_new}.txt',cov_matrix_recalc)
+        
+                        if spectra_save_bool:
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string_new}.txt',spectra_save_recalc,header="wavelength,flux,error")
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw.replace("_numax","")}{extra_save_string_new}.txt',wvl_obs_input_recalc,header="wavelength,flux,error")
+                    else:
+                        
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectroscopy_best_params_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string_new}.txt',best_spec_params_recalc)
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectroscopy_best_params_error_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string_new}.txt',best_spec_params_recalc_err)    
+                        np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/covariance_matrix_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string_new}.txt',cov_matrix_recalc)
+        
+                        if spectra_save_bool:
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectra_save_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string_new}.txt',spectra_save_recalc,header="wavelength,flux,error")
+                            np.savetxt(f'../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_output}/spectra_wvl_obs_input_{stellar_filename}_{spec_obs_number+1}_{mode_kw}{extra_save_string_new}.txt',wvl_obs_input_recalc,header="wavelength,flux,error")
+                    
+                    # now update the bayesian results with the new [Fe/H] and [Mg/Fe]
+    
+                    best_params_combined_recalc = [teff_fit_wa[0],\
+                                                    logg_fit_wa[0],\
+                                                    feh_fit_wa[0],\
+                                                    best_spec_params_recalc[2]-FeH_spec_sys[0],\
+                                                    1,\
+                                                    1,\
+                #                                    best_spec_params[5]-MgFe_sys[0],\
+                                                    best_spec_params_recalc[4]-MgFe_sys[0],\
+                                                    best_spec_params_recalc[7],\
+                                                    best_spec_params_recalc[20],\
+                                                    mass_fit_wa[0],\
+                                                    age_fit_wa[0],\
+                                                    radius_fit_wa[0],\
+                                                        luminosity_fit_wa[0]]
+                    best_params_combined_recalc = np.array(best_params_combined_recalc)
+                    print("best_params_combined_recalc \n",best_params_combined_recalc)
+                        
+                    
+                    best_params_combined_recalc_err = [teff_fit_wa[1],\
+                                                        logg_fit_wa[1],\
+                                                        feh_fit_wa[1],\
+                                                        best_spec_params_recalc_err[2]+FeH_spec_sys[1],\
+                                                        0.05,\
+                                                        0.05,\
+                                                        # best_spec_params_err[5]+MgFe_sys[1],\
+                                                        best_spec_params_err[4]+MgFe_sys[1],\
+                                                        best_spec_params_err[7],\
+                                                        best_spec_params_err[20],\
+                                                        mass_fit_wa[1],\
+                                                        age_fit_wa[1],\
+                                                        radius_fit_wa[1],\
+                                                        luminosity_fit_wa[1]]
+                                            
+                    best_params_combined_recalc_err = np.array(best_params_combined_recalc_err)
+                    print("best_params_combined_recalc_err \n",best_params_combined_recalc_err)
+                    
+                    
+                    np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_{stellar_filename}{spec_extension}{extra_save_string_new}{cov_save_string}.txt",best_params_combined_recalc,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
+                    np.savetxt(f"../Output_data/Stars_Lhood_combined_spec_phot/multiobs/{directory_output}/best_fit_params_err_{stellar_filename}{spec_extension}{extra_save_string_new}{cov_save_string}.txt",best_params_combined_recalc_err,fmt='%.5f', delimiter=',',header = "Teff [K] \t Logg \t [Fe/H] \t Vmic \t Vsini \t [Mg/Fe] \t [Ti/Fe] \t [Mn/Fe] \t Mass \t Age \t Radius \t Luminosity")
+
+        except:
+              spec_extension = f"_OBS_NUM_{spec_obs_number+1}_SPEC_MODE_{mode_kw}"
+              print(f"star {stellar_filename} spec {spec_extension} : {Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]} failed")       
+              flag_fails[correlation_arr[inp_index][spec_obs_number]] = 1
+              
+              print(traceback.print_stack())
+              
+              continue
+   
+    directory_spectroscopy = star_field_names[inp_index] # name of directory is the name of the star
+    directory_check = os.path.exists(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")                
+    if  directory_check == True:                
+         print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory exists")                    
+    else:                    
+         print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory does not exist")                    
+         os.makedirs(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy}")                    
+         print(f"../Output_data/Stars_Lhood_spectroscopy/multiobs/{directory_spectroscopy} directory has been created")
+    np.savetxt("../Output_data/Stars_Lhood_spectroscopy/multiobs/4MOST_OpR2.5/flag_fails.txt",flag_fails,fmt='%i')
+    np.savetxt("../Output_data/Stars_Lhood_spectroscopy/multiobs/4MOST_OpR2.5/flag_no_rv.txt",flag_no_rv,fmt='%i')
+    
     print(f"Total time elapsed for star {stellar_names[inp_index]} --- {(time.time()-start_time)/60} minutes ---")
 
 def plot_pdf_all(prob_input_arr,prob_input_name_arr,prob_col_arr,teff,logg,feh_spec,age,mass,radius,lum,path,Param_binwidth_arr,plt_title):
@@ -1527,7 +2068,6 @@ def plot_pdf_all(prob_input_arr,prob_input_name_arr,prob_col_arr,teff,logg,feh_s
     for j in range(len(prob_input_arr)):
         
       ### calc the weighted mean and std
-            
       # prob_w_ave_i = np.average(paras[i],weights=prob_input_arr[j])
       # prob_std_dev_i = np.sqrt(np.average((paras[i]-prob_w_ave_i)**2, weights=prob_input_arr[j]))
       
@@ -1843,7 +2383,6 @@ def chkList(lst):
 
 def Log_prob_distributions_1D(Parameter,Probability,Param_name,Param_binwidth,prob_input_name,param_filename,makefig_bool,savefig_bool,stellar_id,chisq_red_bool,savefig_extra_name):
        
-    
     """
     Need to cut the data down and get rid of any zero regions which waste time
     """
@@ -2465,9 +3004,7 @@ def fit_function_quad(x,*labels_inp):
     A_log = labels_inp[0] 
     mu = labels_inp[1]
     sigma = labels_inp[2]
-    
-    # print(labels_inp)
-    
+        
     return -0.5 * (x - mu) ** 2 / sigma ** 2 + A_log
 
 def fit_function_quad_bimodal(x,*labels_inp):
@@ -2524,7 +3061,19 @@ def bimodal(x,*labels_inp):
 
 ### INPUT DATA ###
 
+
+Input_spec_data = np.loadtxt('../Input_data/spectroscopy_observation_data/spectra_list_PLATO_new.txt',delimiter=',',dtype=str)
+# Input_spec_data = np.loadtxt(w_giants_path+'Input_data/spectroscopy_observation_data/spectra_list_PLATO_new_w_giants.txt',delimiter=',',dtype=str)
+
+
+"""
+0 ; source_id (Literature name of the star)
+1 ; spectra type (e.g. HARPS or UVES_cont_norm_convolved etc)
+2 ; spectra path
+"""
+
 Input_phot_data = np.loadtxt('../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/PLATO_bmk_phot_data/PLATO_photometry_eDR3.csv',delimiter = ',',dtype=str)
+# Input_phot_data = np.loadtxt(w_giants_path+'Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/PLATO_bmk_phot_data/PLATO_photometry_eDR3_w_giants.csv',delimiter = ',',dtype=str)
 star_field_names = Input_phot_data[:,0]
 
 """
@@ -2560,6 +3109,7 @@ star_field_names = Input_phot_data[:,0]
 """
 
 Input_ast_data = np.loadtxt('../Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/PLATO_stars_seism.txt',delimiter = ',',dtype=str)
+# Input_ast_data = np.loadtxt(w_giants_path+'Input_data/photometry_asteroseismology_observation_data/PLATO_benchmark_stars/Seismology_calculation/PLATO_stars_seism_w_giants.txt',delimiter = ',',dtype=str)
 
 """
 0 ; source_id (Literature name of the star)
@@ -2571,15 +3121,8 @@ Input_ast_data = np.loadtxt('../Input_data/photometry_asteroseismology_observati
 6 ; err d_nu neg, lower uncertainty [microHz]
 """
 
-Input_spec_data = np.loadtxt('../Input_data/spectroscopy_observation_data/spectra_list_PLATO_new.txt',delimiter=',',dtype=str)
-
-"""
-0 ; source_id (Literature name of the star)
-1 ; spectra type (e.g. HARPS or UVES_cont_norm_convolved etc)
-2 ; spectra path
-"""
-
 Ref_data = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_params.txt",delimiter=",",dtype=str)
+# Ref_data = np.loadtxt(w_giants_path+'Input_data/Reference_data/PLATO_stars_lit_params_w_giants.txt',delimiter=",",dtype=str)
 
 """
 0 ; source_id (Literature name of the star)
@@ -2592,6 +3135,7 @@ Ref_data = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_params.txt",
 """
 
 Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_params.txt",delimiter=",",dtype=str)
+# Ref_data_other = np.loadtxt(w_giants_path+'Input_data/Reference_data/PLATO_stars_lit_other_params_w_giants.txt',delimiter=",",dtype=str)
 
 """
 0 ; source_id (Literature name of the star)
@@ -2607,74 +3151,88 @@ Ref_data_other = np.loadtxt("../Input_data/Reference_data/PLATO_stars_lit_other_
 10 ; err [Mn/Fe]
 """
 
+flag_fails = np.zeros([len(Input_spec_data)])
+flag_no_rv = np.zeros([len(Input_spec_data)])
+
 correlation_arr = correlation_table(Input_spec_data,Input_phot_data)
 
 stellar_names = Input_phot_data[:,0]
 
-error_mask_recreate_bool = False # if False, then teff varying mask is assumed
-error_map_use_bool = False
+error_mask_recreate_bool =False # if False, then teff varying mask is assumed
+error_map_use_bool = True
 cont_norm_bool = True
 rv_shift_recalc = [False,-400,400,0.5]
+# rv_shift_direct = np.nan
+rv_shift_direct = -30
+rv_shift_direct_err = np.nan
+# gives option to use rv_shift straight away
+# if not nan, then ignore rv_shift_recalc above
 conv_instrument_bool = True
-# input_spec_resolution = 11500
-# input_spec_resolution = 5000
 input_spec_resolution = 20000
 numax_iter_bool = False
-niter_numax_MAX = 5
+niter_numax_MAX = 2
 recalc_metals_bool = False
 feh_recalc_fix_bool = False
 logg_fix_bool = False
-spec_fix_values = [5770,4.44,0]
+# logg_fix_input_arr = [3.99,0.01,0.01]
+logg_fix_input_arr = [np.nan,np.nan,np.nan]
+spec_fix_values = [5777,4.44,0]
 unique_emask_params_bool = False
 unique_emask_params = [5777,4.44,0,1,1.6,0,0,0] # solar example 
-
+numax_first_step_logg = [False,np.nan,np.nan,np.nan]
 
 ### photometry grid limits
 
-Teff_resolution = 250 # K
-logg_resolution = 0.3 # dex
-feh_resolution = 0.3 # dex
+Teff_resolution = 500 # K 800
+logg_resolution = 0.3 # dex 0.6
+feh_resolution = 0.6 # dex 0.6
 
 phot_ast_central_values_bool = False # if set to True, values below will be used
 phot_ast_central_values_arr = [5900,4,0] # these values are at the centre of the photometry grid
 
 phot_magnitude_set = "all" # you can have all, gaia, non-gaia, gaia_col and gaia_bprp_col as strings to indicate filters 
 
+save_ast_space_bool = False
 spectra_save_bool = False 
-save_phot_space_bool = True # if this was set true here, it must still be true for the next modules, same for next bool variable 
-save_spec_phot_space_bool = True
-save_final_space_bool = True
+save_phot_space_bool = False # if this was set true here, it must still be true for the next modules, same for next bool variable 
+save_spec_phot_space_bool = False
+save_final_space_bool = False
 
 chi_2_red_bool = False
 
-best_spec_bool = True 
-phot_ast_track_bool = True
-spec_track_bool = True
-bayes_scheme_bool = True
+best_spec_bool = False    
+phot_ast_track_bool = False
+spec_track_bool = False
+bayes_scheme_bool = False
+recalc_metals_scheme_bool = False
 
+## PLATO MSAP2 modules
+
+MSAP2_01_bool = False 
+MSAP2_02_bool = False
+MSAP2_03_bool = False
+
+# MSAP2_01_test_case_kw = "msap4"
+# MSAP2_01_test_case_kw = "ast_pdf"
+MSAP2_01_test_case_kw = "numax_iter"
 
 ### naming conventions for the settings above
 
 # mode_kw = "LITE_logg"
 # mode_kw = "LITE_numax"
-# mode_kw = "MASK"
-mode_kw = "BLIND"
+mode_kw = "MASK"
+# mode_kw = "BLIND"
 # mode_kw = "FULL"
 # mode_kw = "BLIND_numax"
 
-
-
-spec_covariance_bool = False # To use spectroscopic covariance in creation of PDF
+spec_covariance_bool = True # To use spectroscopic covariance in creation of PDF
 
 Teff_thresh = 0
 Logg_thresh = 0
 FeH_thresh = 0
 
 # systematics from benchmarking Gent et al (2021)    
-# systematics are applied only with zero co-variance
-# with covariance requires further development
 # be free to change/improve
-# for now keep spec_covariance_bool as False 
 
 if spec_covariance_bool:
 
@@ -2687,43 +3245,51 @@ if spec_covariance_bool:
 
     Teff_sys = [21.165,34.86]
     Logg_sys = [0.007,0.018]
-    # Teff_sys = [0,34.86]
-    # Logg_sys = [0,0.018]
     FeH_spec_sys = [0.029,0.029]
     MgFe_sys = [0.019,0.046]
-
     
 else:
     
     Teff_sys = [21.165,34.86]
     Logg_sys = [0.007,0.018]
-    # Teff_sys = [0,34.86]
-    # Logg_sys = [0,0.018]
     FeH_spec_sys = [0.029,0.029]
     MgFe_sys = [0.019,0.046]
 
+    # Teff_sys = [0,0]#[21.165,34.86]
+    # Logg_sys = [0,0]#[0.007,0.018]
+    # # Teff_sys = [0,34.86]
+    # # Logg_sys = [0,0.018]
+    # FeH_spec_sys = [0,0]#[0.029,0.029]
+    # MgFe_sys = [0,0]#[0.019,0.046]
+
+
 ### string that is attached to the filename, can be useful for specifying a certain way you ran the code
 
-# extra_save_string = "_no_evo_prior"
-extra_save_string = ""
-# extra_save_string = "_solar_emask"
-# extra_save_string = "_teff_emask"
+
+extra_save_string = "_4MOST_NN_PLATO_test"
+
+
+if MSAP2_01_bool or MSAP2_02_bool or MSAP2_03_bool:
+    extra_save_string += "_MSAP2"
+
 
 if __name__ == '__main__':
-    
-    inp_index = 15
-    
-    main_func_multi_obs(inp_index)
-    
 
+    inp_index = 8
+    # main_func_multi_obs(inp_index)
+            
 '''
-num_processor = 8
-
+num_processor = mp.cpu_count()
 inp_index_list = np.arange(len(stellar_names))
 
 if __name__ == '__main__':
 #    
+    # Limit the threads from numpy and scipy (important for multiprocessing)
+    os.environ['OPENBLAS_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+
     p = mp.Pool(num_processor) # Pool distributes tasks to available processors using a FIFO schedulling (First In, First Out)
     p.map(main_func_multi_obs,inp_index_list) # You pass it a list of the inputs and it'll iterate through them
     p.terminate() # Terminates process 
+
 '''
