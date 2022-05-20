@@ -911,8 +911,8 @@ print('loading evo tracks')
 # shape = (49,46255417) # this is the shape of the large stellar evolution file 
 shape = (24,9453868) # this is the shape of the large stellar evolution file 
 
-# test_input_path = ""
-test_input_path = "../SAPP_v1.1_clean_thesis_use/"
+test_input_path = ""
+# test_input_path = "../SAPP_v1.1_clean_thesis_use/"
 
 if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap_v2.npy"):
 # if os.path.exists("../" + test_input_path + "Input_data/GARSTEC_stellar_evolution_models/photometry_stellar_track_mmap.npy"): 
