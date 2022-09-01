@@ -21,6 +21,8 @@ from SAPP_spectroscopy.Payne.continuum_norm_spectra import continuum_normalise_s
 # from continuum_norm_spectra import continuum_normalise_spectra
 from matplotlib.pyplot import rc
 import time
+from astropy import constants as const
+from scipy import signal
 
 rc('text', usetex=False)
 plt.rcParams["font.family"] = "Times New Roman"
@@ -103,6 +105,7 @@ def restore_spectrum_useANN(wavelenInput, NNet, labels):
     l2 = 1.0 / (1.0 + np.exp(-l2) )
 
     predictFlux = np.dot( NNet['w_array_2'], l2 ) + NNet['b_array_2']
+        
     return np.interp(wavelenInput, NNet['wvl'], predictFlux)
 
 
@@ -184,23 +187,27 @@ def getModelSpec(w, fobs, labels, res):
     return f
 
 
-def restore1(wvl_arr, labels):
-    print(f"{len(wvl_arr)} lam points requested in restore")
+def restore1(wvl_arr, *labels):
+    # print(f"{len(wvl_arr)} lam points requested in restore")
     #part of spectrum    
     
     wvl_min_bool = wvl_arr[0]
     wvl_max_bool = wvl_arr[1]
-    # rv_shift = wvl_arr[2]
+    input_spec_resolution = wvl_arr[2]
     wvl_obs = wvl_arr[3:] # this needs to be used to cut pred flux, it is already been interpolated and shifted to rest frame
     delta_rv_shift = 6*labels[0]
     www=w0*(1+delta_rv_shift/299792.458)    
+    
+    
+    
+    # print("length labels restore1",len(labels[1:]),labels)
         
     #1st layer
     if cheb == 0:
-        first=leakyReLu(np.dot(w_array_0,labels[1:])+ b_array_0)        
+        first=leakyReLu(np.dot(w_array_0,labels[1:-1])+ b_array_0)        
         #first=relu(np.dot(w_array_0,labels[1:])+ b_array_0)        
     elif cheb >= 1:
-        first=leakyReLu(np.dot(w_array_0,labels[1:-cheb])+ b_array_0)
+        first=leakyReLu(np.dot(w_array_0,labels[1:-cheb-1])+ b_array_0)
         #first=relu(np.dot(w_array_0,labels[1:-cheb])+ b_array_0)
     #2nd layer
     snd=sigmoid(np.dot(w_array_1,first) + b_array_1)
@@ -239,8 +246,12 @@ def restore1(wvl_arr, labels):
             www = www[www<=max(wvl_obs)]
             w0_temp = w0_temp[w0_temp<=max(wvl_obs)]
             # www = www[www<=max(w0_temp)]            
-            
-        
+    
+    vbroad = (labels[num_labels+1] + 0.5)*(x_max[-1]-x_min[-1]) + x_min[-1] # vbroad converted to Km/s
+    
+    predict_flux = convolve_gauss(www, predict_flux, input_spec_resolution, mode='resolution')
+    predict_flux = convolve_gauss(www, predict_flux, vbroad, mode='broadening')
+
     # print('\nrestore check \t len www:',len(www))
     # print('restore check \t len flux:',len(predict_flux),'\n')
     flux=np.interp(w0_temp,www,predict_flux) # w0_temp is the wavelength scale that we're working with, we cut www to match the limits of w0_temp and now we're interpolating onto the scale    
@@ -250,12 +261,13 @@ def restore1(wvl_arr, labels):
     # np.convolve(flux,vrot,mode='same')
     
     ### CONVOLVE FOR HR21 --> RVS
-    # w0_temp,flux = convolve_python(w0_temp,flux,5000) # RVS resolution
+    # w0_temp,flux = convolve_python(w0_temp,flux,5000) # PLATO ANN resolution
     # w0_temp,flux = convolve_python(w0_temp,flux,11500) # RVS resolution
     # with open("../../../Output_data/curvefit_iteration_results/curvefit_collect_numax_start.txt",'a') as the_file:
     # with open("../../../Output_data/curvefit_iteration_results/curvefit_collect_central_start.txt",'a') as the_file:
     
-    return w0_temp, flux
+    # return w0_temp, flux
+    return flux
 
 #function that restore payne model spectrum apply doppler shift and normalisation
 
@@ -1158,6 +1170,20 @@ def find_best_val(ind_spec_arr):
     
     else:        
         
+        # plt.axhline(y=1.5,linestyle='--',linewidth=0.1)
+        # plt.axhline(y=0,linestyle='--',linewidth=0.1)
+        # wav_mask = (wavelength > 5200)&(wavelength<5300)
+        # plt.plot(wavelength[wav_mask],flux_norm[wav_mask],'k+',markersize=0.1)
+        
+        # wav_conv_test,flux_conv_test = convolve_python(wavelength[wav_mask],flux_norm[wav_mask],5000)
+        
+        # plt.plot(wav_conv_test,flux_conv_test,'m-',linewidth=0.5)
+        # plt.xticks(np.arange(5200, 5300, 10),rotation=90,fontsize=5)
+        # plt.show()
+        
+        # a=b
+            
+        
         if cont_norm_bool == True:
             print('normalising')
             
@@ -1173,9 +1199,10 @@ def find_best_val(ind_spec_arr):
             # these are the zones which split up the spectra to normalise
             
             # further detail can be found in the continuum_normalise_spectra() script
-
-            geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1_hr10.txt")
-            geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1.txt")
+            
+            # geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1_hr10.txt")
+            # geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1.txt")
+            geslines_synth_loaded = np.loadtxt("SAPP_spectroscopy/Payne/sapp_seg_v1 copy.txt")
             #print(wavelength,flux_clipped,error_clipped)
             spec_norm_results = continuum_normalise_spectra(wavelength = wavelength,\
                                         flux = flux_clipped,\
@@ -1193,10 +1220,22 @@ def find_best_val(ind_spec_arr):
             # continuum_stitch = spec_norm_results[3]
             # geslines_synth = spec_norm_results[4]    
             
+            print("finished normalising")
+            
             wvl = wavelength_normalised_stitch
             obs = flux_normalised_stitch
             usert = error_flux_normalised_stitch
 
+            # plt.axhline(y=1.5,linestyle='--',linewidth=0.1)
+            # plt.axhline(y=0,linestyle='--',linewidth=0.1)            
+            # wav_mask = (wvl > 5200)&(wvl<5300)
+            # plt.plot(wvl[wav_mask],obs[wav_mask],'r+',markersize=0.1)
+            # wav_conv_test,flux_conv_test = convolve_python(wvl[wav_mask],obs[wav_mask],5000)
+            # plt.plot(wav_conv_test,flux_conv_test,'k-',linewidth=0.5)
+            # plt.xticks(np.arange(5200, 5300, 10),rotation=90,fontsize=5)
+            # plt.show()
+
+            # a=b
         elif cont_norm_bool == False:
     
             wvl = wavelength
@@ -1317,8 +1356,8 @@ def find_best_val(ind_spec_arr):
 
         # print('wvl_to_cut:',wvl_to_cut,'\tlen:',len(wvl_to_cut))
         # print('len obs:',len(obs))
-        wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,rv_shift,wvl_to_cut))
-    
+        wvl_obs_input = np.hstack((wvl_min_bool,wvl_max_bool,input_spec_resolution,wvl_to_cut))
+            
         obs = np.interp(w0_new,wvl_corrected,obs) # this will cut obs to model if model is smaller
         usert = np.interp(w0_new,wvl_corrected,usert)
         wvl_corrected = np.interp(w0_new,wvl_corrected,wvl_corrected)
@@ -1473,7 +1512,8 @@ def find_best_val(ind_spec_arr):
         """
         
         #popt_init= np.zeros(num_labels+1+cheb)
-        popt_init= np.zeros(num_labels+1+cheb+1)
+        # popt_init= np.zeros(num_labels+1+cheb+1)
+        popt_init= np.zeros(num_labels+cheb+1+1)
         
         
         if recalc_metals_bool == True: 
@@ -1492,7 +1532,7 @@ def find_best_val(ind_spec_arr):
             kwargs={'loss':'linear',"max_nfev":1e8,'xtol':1e-4}
         
             try:
-                init= np.zeros(num_labels+1+cheb)
+                init= np.zeros(num_labels+1+cheb+1)
                 lb=init-0.49 # was 0.51 before
                 hb=init+0.49
                 
@@ -1524,8 +1564,8 @@ def find_best_val(ind_spec_arr):
                 suc=True
             except RuntimeError:
                 print("Error - curve_fit failed ")#stars[ind_spec])
-                popt=np.ones(num_labels+1+cheb)
-                pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+                popt=np.ones(num_labels+1+cheb+1)
+                pcov=np.ones((num_labels+1+cheb+1,num_labels+1+cheb+1))
                 popt*=np.nan
                 suc=False
         
@@ -1575,12 +1615,12 @@ def find_best_val(ind_spec_arr):
                                                 labels, res=input_spec_resolution 
                                                 )
                 #popt, pcov = curve_fit(fitFunc,wvl_obs_input,\
-                popt, pcov = curve_fit(fitFunc,w0_new,\
-                                      obs,\
-                                      p0 = popt_init,#np.zeros(num_labels+1+cheb),\
-                                      sigma=usert,\
-                                      absolute_sigma=True,\
-                                      bounds=(-.49,.49),**kwargs) # was 0.59 before
+                # popt, pcov = curve_fit(fitFunc,w0_new,\
+                #                       obs,\
+                #                       p0 = popt_init,#np.zeros(num_labels+1+cheb),\
+                #                       sigma=usert,\
+                #                       absolute_sigma=True,\
+                #                       bounds=(-.49,.49),**kwargs) # was 0.59 before
                 
                 # popt, pcov = curve_fit(restore_spectrum_useANN,wvl_corrected,\
                 #                       obs,\
@@ -1589,7 +1629,12 @@ def find_best_val(ind_spec_arr):
                 #                       absolute_sigma=True,\
                 #                       bounds=(-.49,.49),**kwargs) # was 0.59 before
                 
-                    
+                popt, pcov = curve_fit(restore1,wvl_obs_input,\
+                                      obs,\
+                                      p0 = popt_init,#np.zeros(num_labels+1+cheb),\
+                                      sigma=usert,\
+                                      absolute_sigma=True,\
+                                      bounds=(-.49,.49),**kwargs) # was 0.59 before                   
                     
                 suc=True
                 
@@ -1597,8 +1642,8 @@ def find_best_val(ind_spec_arr):
                 
             except RuntimeError:
                        # print("Error - curve_fit failed 4:")
-                       popt=np.ones(num_labels+1+cheb)
-                       pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+                       popt=np.ones(num_labels+1+cheb+1)
+                       pcov=np.ones((num_labels+1+cheb+1,num_labels+1+cheb+1))
                        popt*=np.nan
                        suc=False
                        
@@ -1703,7 +1748,7 @@ def find_best_val(ind_spec_arr):
             
                         try:
                                                          
-                                init= np.zeros(num_labels+1+cheb)
+                                init= np.zeros(num_labels+1+cheb+1)
                                 lb=init-0.49
                                 hb=init+0.49
                                     
@@ -1739,8 +1784,8 @@ def find_best_val(ind_spec_arr):
 
                         except RuntimeError:
                                 print("Error - curve_fit failed")#stars[ind_spec])
-                                popt=np.ones(num_labels+1+cheb)
-                                pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+                                popt=np.ones(num_labels+1+cheb+1)
+                                pcov=np.ones((num_labels+1+cheb+1,num_labels+1+cheb+1))
                                 popt*=np.nan
                                 suc=False
                             
@@ -1864,7 +1909,7 @@ def find_best_val(ind_spec_arr):
                     
                 
                     try:
-                                    init= np.zeros(num_labels+1+cheb)
+                                    init= np.zeros(num_labels+1+cheb+1)
                                     lb=init-0.51
                                     hb=init+0.51
                                         
@@ -1887,8 +1932,8 @@ def find_best_val(ind_spec_arr):
                                     suc=True
                     except RuntimeError:
                                     print("Error - curve_fit failed")#stars[ind_spec])
-                                    popt=np.ones(num_labels+1+cheb)
-                                    pcov=np.ones((num_labels+1+cheb,num_labels+1+cheb))
+                                    popt=np.ones(num_labels+1+cheb+1)
+                                    pcov=np.ones((num_labels+1+cheb+1,num_labels+1+cheb+1))
                                     popt*=np.nan
                                     suc=False
                                 
@@ -1936,7 +1981,8 @@ def find_best_val(ind_spec_arr):
                 
                 
         ### normalize the covariance matrix, how? 
-        fit = getModelSpec(w0_new, obs, popt, input_spec_resolution) 
+        # fit = getModelSpec(w0_new, obs, popt, input_spec_resolution) 
+        fit= restore1(wvl_obs_input,*popt)        
         ch2=np.sum(((obs-fit)/usert)**2)/(len(obs)-len(popt))
 
         print("BEST fit parameters =",final)
@@ -1950,8 +1996,8 @@ def find_best_val(ind_spec_arr):
             fout.write(resStr + '\n')
         for i, k in enumerate(ANN['labelsKeys']):
             print(f"{k} = {final[i]:.2f} + {efin_upper[i]:.2f} - {efin_lower[i]:.2f}")
-        print(f"Vbroad = {final[-1]:.2f}")
-                
+        print(f"Vbroad = {final[num_labels]:.2f} + {efin_upper[num_labels]:.2f} - {efin_lower[num_labels]:.2f}")
+            
         out = np.vstack( ( w0_new, obs, fit ) ).T
         np.savetxt(f"./{spec_path.split('/')[-1].split('_')[1]}_bestFit.txt", out)
          
@@ -2029,6 +2075,149 @@ def find_best_val(ind_spec_arr):
         obs_3 = obs_3[wvl_corrected_3 >= w0_range_3[0]] 
         usert_3 = usert_3[wvl_corrected_3 >= w0_range_3[0]]         
         wvl_corrected_3 = wvl_corrected_3[wvl_corrected_3 >= w0_range_3[0]]
+
+        
+        fig2, ax_range = plt.subplots(3,1,figsize = (18,12))
+        
+        ax_range[0].axhline(y=1,linestyle='--',linewidth=2,color='lightgrey')
+        ax_range[1].axhline(y=1,linestyle='--',linewidth=2,color='lightgrey')
+        ax_range[2].axhline(y=1,linestyle='--',linewidth=2,color='lightgrey')
+    
+        # ax_range[0].plot(model_wvl_solar_1,model_flux_solar_1,'m-',linewidth=1,label='solar')
+        # ax_range[1].plot(model_wvl_solar_2,model_flux_solar_2,'m-',linewidth=1,label='solar')
+        # ax_range[2].plot(model_wvl_solar_3,model_flux_solar_3,'m-',linewidth=1,label='solar')
+
+        # ax_range[0].plot(model_wvl_RGB_1,model_flux_RGB_1,'g-',linewidth=1,label='RGB')
+        # ax_range[1].plot(model_wvl_RGB_2,model_flux_RGB_2,'g-',linewidth=1,label='RGB')
+        # ax_range[2].plot(model_wvl_RGB_3,model_flux_RGB_3,'g-',linewidth=1,label='RGB')
+
+        # ax_range[0].plot(model_wvl_solar_poor_1,model_flux_solar_poor_1,'b-',linewidth=1,label='solar poor')
+        # ax_range[1].plot(model_wvl_solar_poor_2,model_flux_solar_poor_2,'b-',linewidth=1,label='solar poor')
+        # ax_range[2].plot(model_wvl_solar_poor_3,model_flux_solar_poor_3,'b-',linewidth=1,label='solar poor')
+
+        # ax_range[0].plot(model_wvl_RGB_poor_1,model_flux_RGB_poor_1,'r-',linewidth=1,label='RGB poor')
+        # ax_range[1].plot(model_wvl_RGB_poor_2,model_flux_RGB_poor_2,'r-',linewidth=1,label='RGB poor')
+        # ax_range[2].plot(model_wvl_RGB_poor_3,model_flux_RGB_poor_3,'r-',linewidth=1,label='RGB poor')
+
+        ax_range[0].plot(w0_1,fit_1,'m-',linewidth=1,label='SAPP')
+        ax_range[1].plot(w0_2,fit_2,'m-',linewidth=1,label='SAPP')
+        ax_range[2].plot(w0_3,fit_3,'m-',linewidth=1,label='SAPP')
+    
+        ax_range[0].plot(wvl_corrected_1,usert_1,'g-',linewidth=3,label='err')
+        ax_range[1].plot(wvl_corrected_2,usert_2,'g-',linewidth=3,label='err')
+        ax_range[2].plot(wvl_corrected_3,usert_3,'g-',linewidth=3,label='err')
+        
+    
+        # ax_range[0].plot(wvl_corrected_1,obs_1,marker='o',color='m',markersize=0.5,label='obs')
+        # ax_range[1].plot(wvl_corrected_2,obs_2,marker='o',color='m',markersize=0.5,label='obs')
+        # ax_range[2].plot(wvl_corrected_3,obs_3,marker='o',color='m',markersize=0.5,label='obs')
+
+        ax_range[0].plot(wvl_corrected_1,obs_1,marker='o',linestyle='none',color='k',markersize=1,label='obs')
+        ax_range[1].plot(wvl_corrected_2,obs_2,marker='o',linestyle='none',color='k',markersize=1,label='obs')
+        ax_range[2].plot(wvl_corrected_3,obs_3,marker='o',linestyle='none',color='k',markersize=1,label='obs')
+        
+        # ax_range[0].plot(model_average_wvl_1,model_average_flux_1,marker='x',color='y',markersize=20,label='Cont Mask')
+        # ax_range[1].plot(model_average_wvl_2,model_average_flux_2,marker='x',color='y',markersize=20,label='Cont Mask')
+        # ax_range[2].plot(model_average_wvl_3,model_average_flux_3,marker='x',color='y',markersize=20,label='Cont Mask')
+        
+        
+        ax_range[2].set_xlabel("$\lambda$ [$\AA$]",fontsize=30)
+    
+        ax_range[0].set_ylabel("Flux",fontsize=30)
+        ax_range[1].set_ylabel("Flux",fontsize=30)
+        ax_range[2].set_ylabel("Flux",fontsize=30)
+        
+        # ax_range[2].legend(loc="lower right",fontsize=30)
+        ax_range[0].legend(loc="lower right",fontsize=30)
+        
+        
+        ax_range[0].tick_params(axis='both', labelsize=30)
+        ax_range[1].tick_params(axis='both', labelsize=30)
+        ax_range[2].tick_params(axis='both', labelsize=30)
+
+        ax_range[0].locator_params(axis="y", nbins=3)
+        ax_range[1].locator_params(axis="y", nbins=3)
+        ax_range[2].locator_params(axis="y", nbins=3)
+
+        ax_range[0].locator_params(axis="x", nbins=10)
+        ax_range[1].locator_params(axis="x", nbins=10)
+        ax_range[2].locator_params(axis="x", nbins=10)        
+        
+        ax_range[0].set_ylim([-0.1,1.1])
+        ax_range[1].set_ylim([-0.1,1.1])
+        ax_range[2].set_ylim([-0.1,1.1])
+
+        # ax_range[0].set_ylim([0,np.nanmax(usert_1)+0.01])
+        # ax_range[1].set_ylim([0,np.nanmax(usert_2)+0.01])
+        # ax_range[2].set_ylim([0,np.nanmax(usert_3)+0.01])
+
+        
+        plt.setp(ax_range[0].spines.values(), linewidth=3)
+        plt.setp(ax_range[1].spines.values(), linewidth=3)
+        plt.setp(ax_range[2].spines.values(), linewidth=3)
+                    
+        
+        
+        
+        # plt.show()   
+        
+        # star_name_save = star_ids_bmk[error_mask_index].replace(" ","_")
+        
+        # if star_name_save == "nu_ind":
+
+        #     spec_name_title = ind_spec_arr[0].replace(f"emask_input_spectra/{star_name_save}/","").replace("_error_synth_flag_True_cont_norm_convolved_hr10_.txt","").replace("_error_synth_flag_False_cont_norm_convolved_hr10_.txt","").replace("HARPS","").replace("UVES","").replace("_"," ")
+
+
+        # else:        
+
+        # spec_name_title = ind_spec_arr[0].replace(f"emask_input_spectra/{star_name_save}/","").replace("_error_synth_flag_True_cont_norm_convolved_hr10_.txt","").replace("_error_synth_flag_False_cont_norm_convolved_hr10_.txt","").replace("_"," ").replace("HARPS","").replace("UVES","").replace("_"," ")
+
+        # spec_name_title = star_ids_bmk[error_mask_index]
+        
+        # if spec_name_title == "18sco": 
+        #     spec_name_title = "18 Sco"
+
+        # if spec_name_title == "sun": 
+        #     spec_name_title = "Sun"
+
+        # if spec_name_title == "betvir": 
+        #     spec_name_title = r"$\beta$ Vir"
+            
+        # if spec_name_title == "bethyi": 
+        #     spec_name_title = r"$\beta$ Hyi"
+            
+        # if spec_name_title == "deleri": 
+        #     spec_name_title =  r"$\delta$ Eri"
+                        
+        # if spec_name_title == "etaboo": 
+        #     spec_name_title = r"$\eta$ Boo"
+            
+        # if spec_name_title == "alfcenA": 
+        #     spec_name_title = r"$\alpha$ Cen A"
+            
+        # if spec_name_title == "alfcenB": 
+        #     spec_name_title = r"$\alpha$ Cen B"
+            
+
+        # ax_range[0].set_title(spec_name_title,fontsize=40)
+        
+        spec_name_title = star_name_id + " " + spec_path.split("/")[-1].replace(".fits","")
+        
+        ax_range[0].set_title(spec_name_title + f"\n {final}, {snr_star}",fontsize=40)
+
+        # fig2.savefig(f"../Output_figures/spec_comparison/RVS_{star_ids_bmk[error_mask_index]}.png") # whilst in main.py script
+        
+        # fig2.savefig("../../../Output_figures/spec_comparison/nu_ind_obs-min.png")
+        # fig2.savefig("../../../Output_figures/spec_comparison/sun_vesta_obs-min.png")
+        # fig2.savefig("../../../Output_figures/spec_comparison/hd49933_obs-min.png")
+
+        #fig2.savefig(f"../Output_figures/spec_comparison/aldo_test_{spec_name_title}.png") # whilst in main.py script
+        # fig2.savefig(f"../Output_figures/spec_comparison/aldo_test_{spec_name_title}_Mg_line.png") # whilst in main.py script
+
+
+        #plt.tight_layout()
+         
+        plt.show()
         
         
         # print(wvl_corrected_1-w0_1)
@@ -2221,19 +2410,20 @@ b_array_1 = ANN["b_array_1"]
 b_array_2 = ANN["b_array_2"]
 x_min = ANN["x_min"]
 x_max = ANN["x_max"]
-normVbroad = 200
+normVbroad = 200 # Km/s
 # add normalisation for line broadening
 x_max = np.hstack(( x_max, [normVbroad] ))
 x_min = np.hstack(( x_min, [0] ))
 w0 = ANN['wvl']
 print(min(w0), max(w0), len(w0))
 
-
+print("len w array 0",len(w_array_0))
 
 # print('array lengths:',len(w_array_0),len(w_array_1),len(w_array_2),len(b_array_0),len(b_array_1),len(b_array_2))
 
 #number of parameters in Payne model
 num_labels=w_array_0.shape[1]
+print("num_labels",num_labels)
 
 #wavelength scale of the models
 # w0=np.linspace(5329.,5616,11480)[40:-40]

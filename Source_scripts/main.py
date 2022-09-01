@@ -766,9 +766,9 @@ def main_func_multi_obs(arg):
         # spec_path = "../Input_data/spectroscopy_observation_data/Gaiaeso_DR4/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]        
         # spec_path = "../Input_data/spectroscopy_observation_data/all_spectra/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
         #spec_path = "../Input_data/spectroscopy_observation_data/uves_data/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
-        spec_path = datapaths['spec data']+"/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
-       
-        error_map_spec_path = Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
+        # spec_path = datapaths['spec data']+"/"+Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
+        spec_path = "../Input_data/spectroscopy_observation_data/" + Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
+        error_map_spec_path = "../Input_data/spectroscopy_observation_data/" + Input_spec_data[:,2][correlation_arr[inp_index][spec_obs_number]]
         error_mask_index = inp_index
         nu_max = Input_ast_data[inp_index][1]
         nu_max_err = Input_ast_data[inp_index][2]
@@ -2698,9 +2698,13 @@ datapaths = get_datapaths(mode)
 # star_field_names = np.loadtxt('../Input_data/photometry_asteroseismology_observation_data/uves_photometry_fieldnames.txt',delimiter = ',',dtype=str)
 
 #general:
-Input_phot_data = np.loadtxt(datapaths['phot data'],delimiter = ',',dtype=str)
-star_field_names = np.loadtxt(datapaths['phot fieldnames'],delimiter = ',',dtype=str)
+# Input_phot_data = np.loadtxt(datapaths['phot data'],delimiter = ',',dtype=str)
+# star_field_names = np.loadtxt(datapaths['phot fieldnames'],delimiter = ',',dtype=str)
 
+#specific star:
+CNAME_star = ["ksihya"]
+Input_phot_data = np.vstack((np.unique(CNAME_star),np.array([['nan'] * 29] * len(np.unique(CNAME_star))).T)).T
+star_field_names = ["UVES"]*len(Input_phot_data[:,0])
 
 """
 0 ; source_id (Literature name of the star)
@@ -2756,7 +2760,11 @@ Input_ast_data = np.vstack((Input_phot_data[:,0],\
 #Input_spec_data = np.loadtxt('../Input_data/spectroscopy_observation_data/spectra_list_PLATO_new.txt',delimiter=',',dtype=str)
 #Input_spec_data = np.loadtxt('../Input_data/spectroscopy_observation_data/GES_DR4_spectroscopy_input_clusters.txt',delimiter=',',dtype=str)
 #Input_spec_data = np.loadtxt('../Input_data/spectroscopy_observation_data/uves_spectroscopy_input.txt',delimiter=',',dtype=str)
-Input_spec_data = np.loadtxt(datapaths['spec input'],delimiter=',',dtype=str)
+# Input_spec_data = np.loadtxt(datapaths['spec input'],delimiter=',',dtype=str)
+
+# specific star:
+Input_spec_data = np.array([["ksihya","UVES","ksiHya_EM_test/uvu_11325994-3151279_520.0_9.fits"]])
+
 
 """
 0 ; source_id (Literature name of the star)
@@ -2800,7 +2808,7 @@ stellar_names = Input_phot_data[:,0]
 error_mask_recreate_bool = False # if False, then teff varying mask is assumed
 error_map_use_bool = False
 #cont_norm_bool = True  #bool for continuum normalisation
-cont_norm_bool = False
+cont_norm_bool = True
 rv_shift_recalc = [False,-400,400,0.5]
 conv_instrument_bool = True
 # input_spec_resolution = 11500
@@ -2838,9 +2846,9 @@ save_final_space_bool = False
 chi_2_red_bool = False
 
 best_spec_bool = True  
-phot_ast_track_bool = True
-spec_track_bool = True
-bayes_scheme_bool = True
+phot_ast_track_bool = False
+spec_track_bool = False
+bayes_scheme_bool = False
 
 
 ### naming conventions for the settings above
@@ -2898,7 +2906,7 @@ else:
 ### string that is attached to the filename, can be useful for specifying a certain way you ran the code
 
 # extra_save_string = "_no_evo_prior"
-extra_save_string = ""
+extra_save_string = "_wo_Vbroad"
 # extra_save_string = "_solar_emask"
 # extra_save_string = "_teff_emask"
 
