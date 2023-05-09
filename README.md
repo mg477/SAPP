@@ -1,7 +1,8 @@
 # Stellar Abundances and atmospheric Parameters Pipeline (SAPP) Version 1.1
 
-#### Authors: Matthew Raymond Gent, Max-Planck Institute for Astronomy, Heidelberg, Germany 
-#### Co-Authors/Contributors: Phillip Eitner, Jeffrey Gerber, Mikhail Kovalev, Ekaterina Magg
+#### Author: Matthew Raymond Gent, Max-Planck Institute for Astronomy, Heidelberg, Germany 
+#### Co-Authors: Aldo Serenelli, Maria Bergemann
+#### Contributors: Phillip Eitner, Jeffrey Gerber, Mikhail Kovalev, Ekaterina Magg, Ulrike Heiter, Terese Olander, Nicolas Nardetto, Thierry Morel, Nayeem Ebrahimkutty
 
 SAPP is a fully automated python code which culminates different types of 
 observation data (photometry, parallax, asteroseismology and spectroscopy) 
